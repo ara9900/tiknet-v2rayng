@@ -91,10 +91,22 @@ class MainActivity : HelperBaseComponentActivity() {
         }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        if (!com.v2ray.ang.tiknet.TikNetPrefs.isLoggedIn(this)) {
+            startActivity(Intent(this, com.v2ray.ang.ui.tiknet.TikNetLoginActivity::class.java))
+            finish()
+            return
+        }
         super.onCreate(savedInstanceState)
         mainViewModel.onAction(MainAction.Initialize)
 
         checkAndRequestPermission(PermissionType.POST_NOTIFICATIONS) {}
+        // Refresh TikNet subscription quietly in background
+        lifecycleScope.launch(Dispatchers.IO) {
+            runCatching { com.v2ray.ang.tiknet.TikNetSync.syncPersonalSubscription(this@MainActivity) }
+            withContext(Dispatchers.Main) {
+                mainViewModel.onAction(MainAction.RefreshGroups)
+            }
+        }
     }
 
     @Composable
@@ -138,6 +150,7 @@ class MainActivity : HelperBaseComponentActivity() {
 
     private fun navigateTo(destination: MainDestination) {
         val intent = when (destination) {
+            MainDestination.TikNetAccount -> Intent(this, com.v2ray.ang.ui.tiknet.TikNetAccountActivity::class.java)
             MainDestination.Subscriptions -> Intent(this, SubSettingActivity::class.java)
             MainDestination.PerAppProxy -> Intent(this, PerAppProxyActivity::class.java)
             MainDestination.Routing -> Intent(this, RoutingSettingActivity::class.java)

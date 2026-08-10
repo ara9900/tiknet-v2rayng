@@ -1,6 +1,24 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name" translatable="false">v2rayNG</string>
+    <string name="app_name" translatable="false">TikNet</string>
+    <string name="tiknet_brand" translatable="false">TikNet</string>
+    <string name="tiknet_login_subtitle">ورود به پنل</string>
+    <string name="tiknet_username_hint">نام کاربری</string>
+    <string name="tiknet_password_hint">رمز عبور</string>
+    <string name="tiknet_login_btn">ورود</string>
+    <string name="tiknet_login_empty">نام کاربری و رمز را وارد کنید</string>
+    <string name="tiknet_login_failed">ورود ناموفق</string>
+    <string name="tiknet_account_title">حساب من</string>
+    <string name="tiknet_sync_btn">بروزرسانی اشتراک</string>
+    <string name="tiknet_catalog_btn">سرورهای کاتالوگ</string>
+    <string name="tiknet_logout_btn">خروج از حساب</string>
+    <string name="tiknet_syncing">در حال همگام‌سازی…</string>
+    <string name="tiknet_sync_ok">%1$d کانفیگ وارد شد</string>
+    <string name="tiknet_sync_failed">همگام‌سازی ناموفق</string>
+    <string name="tiknet_catalog_empty">کاتالوگی موجود نیست</string>
+    <string name="tiknet_catalog_imported">%1$d کانفیگ از «%2$s» وارد شد</string>
+    <string name="tiknet_account_load_failed">خواندن حساب ناموفق: %1$s</string>
+    <string name="tiknet_menu_account">حساب TikNet</string>
     <string name="app_widget_name">Switch</string>
     <string name="app_tile_name">Switch</string>
     <string name="app_tile_first_use">Add a profile in the app before using this feature.</string>

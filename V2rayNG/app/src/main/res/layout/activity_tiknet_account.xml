@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fillViewport="true"
+    android:background="#0B1220">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="24dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/tiknet_account_title"
+            android:textColor="#FFFFFF"
+            android:textSize="24sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/tiknet_account_info"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:textColor="#CBD5E1"
+            android:textSize="14sp"
+            android:lineSpacingExtra="4dp" />
+
+        <Button
+            android:id="@+id/tiknet_sync_btn"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:layout_marginTop="24dp"
+            android:backgroundTint="#2563EB"
+            android:text="@string/tiknet_sync_btn"
+            android:textColor="#FFFFFF" />
+
+        <Button
+            android:id="@+id/tiknet_catalog_btn"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:layout_marginTop="10dp"
+            android:backgroundTint="#1E293B"
+            android:text="@string/tiknet_catalog_btn"
+            android:textColor="#FFFFFF" />
+
+        <Button
+            android:id="@+id/tiknet_logout_btn"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:layout_marginTop="10dp"
+            android:backgroundTint="#7F1D1D"
+            android:text="@string/tiknet_logout_btn"
+            android:textColor="#FFFFFF" />
+
+        <ProgressBar
+            android:id="@+id/tiknet_account_progress"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center_horizontal"
+            android:layout_marginTop="16dp"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/tiknet_account_status"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:textColor="#94A3B8"
+            android:textSize="13sp" />
+    </LinearLayout>
+</ScrollView>

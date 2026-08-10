@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fillViewport="true"
+    android:background="#0B1220">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="28dp"
+        android:gravity="center_horizontal">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="72dp"
+            android:text="@string/tiknet_brand"
+            android:textColor="#FFFFFF"
+            android:textSize="34sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="@string/tiknet_login_subtitle"
+            android:textColor="#9AA4B2"
+            android:textSize="14sp" />
+
+        <EditText
+            android:id="@+id/tiknet_username"
+            android:layout_width="match_parent"
+            android:layout_height="52dp"
+            android:layout_marginTop="48dp"
+            android:background="#1A2436"
+            android:hint="@string/tiknet_username_hint"
+            android:textColorHint="#6B7280"
+            android:textColor="#FFFFFF"
+            android:paddingHorizontal="16dp"
+            android:inputType="text"
+            android:importantForAutofill="no" />
+
+        <EditText
+            android:id="@+id/tiknet_password"
+            android:layout_width="match_parent"
+            android:layout_height="52dp"
+            android:layout_marginTop="12dp"
+            android:background="#1A2436"
+            android:hint="@string/tiknet_password_hint"
+            android:textColorHint="#6B7280"
+            android:textColor="#FFFFFF"
+            android:paddingHorizontal="16dp"
+            android:inputType="textPassword"
+            android:importantForAutofill="no" />
+
+        <Button
+            android:id="@+id/tiknet_login_btn"
+            android:layout_width="match_parent"
+            android:layout_height="52dp"
+            android:layout_marginTop="20dp"
+            android:backgroundTint="#2563EB"
+            android:text="@string/tiknet_login_btn"
+            android:textColor="#FFFFFF" />
+
+        <ProgressBar
+            android:id="@+id/tiknet_progress"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/tiknet_error"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:textColor="#F87171"
+            android:textSize="13sp"
+            android:visibility="gone" />
+    </LinearLayout>
+</ScrollView>
