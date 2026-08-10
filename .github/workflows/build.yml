@@ -86,35 +86,33 @@ jobs:
         distribution: 'temurin'
         java-version: '21'
 
-    - name: Prepare signing keystore
+    - name: Prepare signing keystore (same as Flutter TikNet)
       id: android_keystore
+      env:
+        ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        ANDROID_KEYSTORE_ALIAS: ${{ secrets.ANDROID_KEYSTORE_ALIAS }}
       run: |
         KEYSTORE_PATH="${{ github.workspace }}/android_keystore.jks"
-        if [ -n "${{ secrets.APP_KEYSTORE_BASE64 }}" ]; then
-          echo "${{ secrets.APP_KEYSTORE_BASE64 }}" | base64 -d > "$KEYSTORE_PATH"
-          echo "filePath=$KEYSTORE_PATH" >> $GITHUB_OUTPUT
-          echo "store_password=${{ secrets.APP_KEYSTORE_PASSWORD }}" >> $GITHUB_OUTPUT
-          echo "key_alias=${{ secrets.APP_KEYSTORE_ALIAS }}" >> $GITHUB_OUTPUT
-          echo "key_password=${{ secrets.APP_KEY_PASSWORD }}" >> $GITHUB_OUTPUT
-        else
-          # One-off CI keystore so builds still produce installable APKs.
-          keytool -genkeypair -v -storetype PKCS12 \
-            -keystore "$KEYSTORE_PATH" -alias tiknet \
-            -keyalg RSA -keysize 2048 -validity 10000 \
-            -storepass tiknet123 -keypass tiknet123 \
-            -dname "CN=TikNet Xray, OU=App, O=TikNet, L=Tehran, ST=Tehran, C=IR"
-          echo "filePath=$KEYSTORE_PATH" >> $GITHUB_OUTPUT
-          echo "store_password=tiknet123" >> $GITHUB_OUTPUT
-          echo "key_alias=tiknet" >> $GITHUB_OUTPUT
-          echo "key_password=tiknet123" >> $GITHUB_OUTPUT
+        if [ -z "$ANDROID_KEYSTORE_BASE64" ]; then
+          echo "::error::Secret ANDROID_KEYSTORE_BASE64 is required (same key as Flutter TikNet / panel updates)."
+          exit 1
         fi
+        echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$KEYSTORE_PATH"
+        STORE_PASS="${ANDROID_KEYSTORE_PASSWORD:-tiknet123}"
+        KEY_ALIAS="${ANDROID_KEYSTORE_ALIAS:-tiknet}"
+        echo "filePath=$KEYSTORE_PATH" >> $GITHUB_OUTPUT
+        echo "store_password=$STORE_PASS" >> $GITHUB_OUTPUT
+        echo "key_alias=$KEY_ALIAS" >> $GITHUB_OUTPUT
+        echo "key_password=$STORE_PASS" >> $GITHUB_OUTPUT
+        echo "✅ Using production TikNet keystore (alias=$KEY_ALIAS)"
 
     - name: Build APK
       run: |
         cd ${{ github.workspace }}/V2rayNG
         echo "sdk.dir=${ANDROID_HOME}" > local.properties
         chmod 755 gradlew
-        ./gradlew licenseFdroidReleaseReport
+        ./gradlew licensePlaystoreReleaseReport || ./gradlew licenseFdroidReleaseReport || true
         ./gradlew assemblePlaystoreRelease \
           -Pandroid.injected.signing.store.file=${{ steps.android_keystore.outputs.filePath }} \
           -Pandroid.injected.signing.store.password=${{ steps.android_keystore.outputs.store_password }} \
@@ -125,28 +123,28 @@ jobs:
       uses: actions/upload-artifact@v7
       if: ${{  success() }}
       with:
-        name: TikNet-Xray-ARM64
+        name: TikNet-ARM64
         path: ${{ github.workspace }}/V2rayNG/app/build/outputs/apk/*/release/*arm64-v8a*.apk
 
     - name: Upload armeabi-v7a APK
       uses: actions/upload-artifact@v7
       if: ${{  success() }}
       with:
-        name: TikNet-Xray-ARM7
+        name: TikNet-ARM7
         path: ${{ github.workspace }}/V2rayNG/app/build/outputs/apk/*/release/*armeabi-v7a*.apk
 
     - name: Upload x86 APK
       uses: actions/upload-artifact@v7
       if: ${{  success() }}
       with:
-        name: TikNet-Xray-x86
+        name: TikNet-x86
         path: ${{ github.workspace }}/V2rayNG/app/build/outputs/apk/*/release/*x86*.apk
 
     - name: Upload universal APK
       uses: actions/upload-artifact@v7
       if: ${{ success() }}
       with:
-        name: TikNet-Xray-Universal
+        name: TikNet-Universal
         path: ${{ github.workspace }}/V2rayNG/app/build/outputs/apk/*/release/*universal*.apk
 
   sign-and-release:

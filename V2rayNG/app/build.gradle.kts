@@ -10,11 +10,11 @@ android {
     compileSdk = 37
 
     defaultConfig {
-        applicationId = "com.tik.net.xray"
+        applicationId = "com.tik.net"
         minSdk = 24
         targetSdk = 37
-        versionCode = 10001
-        versionName = "1.0.1"
+        versionCode = 40300
+        versionName = "4.3.0"
 
         val abiFilterList = (properties["ABI_FILTERS"] as? String)?.split(';')
         splits {
@@ -112,13 +112,10 @@ android {
                     else
                         "universal"
 
-                    output.outputFileName = "TikNet-Xray_${variant.versionName}_${abi}.apk"
-                    if (versionCodes.containsKey(abi)) {
-                        output.versionCodeOverride =
-                            (1000000 * versionCodes[abi]!!).plus(variant.versionCode)
-                    } else {
-                        return@forEach
-                    }
+                    output.outputFileName = "TikNet_${variant.versionName}_${abi}.apk"
+                    // Keep versionCode identical to defaultConfig so panel
+                    // in-app updates can compare against Flutter TikNet builds.
+                    output.versionCodeOverride = variant.versionCode
                 }
         }
     }

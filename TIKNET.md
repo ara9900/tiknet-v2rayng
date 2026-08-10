@@ -1,30 +1,11 @@
-# TikNet on v2rayNG (Xray core)
+﻿# TikNet on v2rayNG (Xray core)
 
-Fork of [2dust/v2rayNG](https://github.com/2dust/v2rayNG) customized for **TikNet** panel login.
+Fork of [2dust/v2rayNG](https://github.com/2dust/v2rayNG) for **TikNet**.
 
-- Package: `com.tik.net.xray` (so it can sit next to Flutter TikNet `com.tik.net`)
-- App name: TikNet
-- Login → import personal subscription via panel API
-- Account screen: sync subscription, catalog servers, logout
-- Connection / ping / Reality: stock **v2rayNG + Xray**
+- **Package:** `com.tik.net` (same as Flutter TikNet — panel in-app update installs over previous)
+- **Signing:** same production keystore as Flutter TikNet (`ANDROID_KEYSTORE_*` secrets)
+- **versionCode:** must stay higher than last Flutter build (currently `40300` / `4.3.0`)
 
-## Panel
+## Panel update
 
-Same as Flutter TikNet:
-
-1. `https://ara9900.github.io/app-config/config.json`
-2. `https://panel.tikn.ir/static/config.json`
-3. Fallback `https://panel.tikn.ir`
-
-## Build
-
-GitHub Actions workflow: **Build APK** (`.github/workflows/build.yml`).
-
-Required secrets (same names as upstream v2rayNG):
-
-- `APP_KEYSTORE_BASE64`
-- `APP_KEYSTORE_PASSWORD`
-- `APP_KEYSTORE_ALIAS`
-- `APP_KEY_PASSWORD`
-
-If secrets are missing, the TikNet workflow generates a one-off CI keystore so you still get an installable APK artifact.
+Upload the ARM64 APK to panel static releases and set app-update `versionCode` **> installed** (e.g. `40300`).
