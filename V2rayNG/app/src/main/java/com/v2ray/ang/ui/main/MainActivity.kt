@@ -94,45 +94,18 @@ class MainActivity : HelperBaseComponentActivity() {
         if (!com.v2ray.ang.tiknet.TikNetPrefs.isLoggedIn(this)) {
             startActivity(Intent(this, com.v2ray.ang.ui.tiknet.TikNetLoginActivity::class.java))
             finish()
+            super.onCreate(savedInstanceState)
             return
         }
         super.onCreate(savedInstanceState)
-        mainViewModel.onAction(MainAction.Initialize)
-
-        checkAndRequestPermission(PermissionType.POST_NOTIFICATIONS) {}
-        // Refresh TikNet subscription quietly in background
-        lifecycleScope.launch(Dispatchers.IO) {
-            runCatching { com.v2ray.ang.tiknet.TikNetSync.syncPersonalSubscription(this@MainActivity) }
-            withContext(Dispatchers.Main) {
-                mainViewModel.onAction(MainAction.RefreshGroups)
-            }
-        }
     }
 
     @Composable
     override fun ScreenContent() {
-        BackHandler { moveTaskToBack(false) }
-        MainScreen(
-            mainViewModel = mainViewModel,
-            onAction = { action ->
-                when (action) {
-                    MainAction.ToggleService -> handleFabAction()
-                    MainAction.TestCurrentServer -> handleLayoutTestClick()
-                    MainAction.ImportQRcode -> importQRcode()
-                    MainAction.ImportClipboard -> importClipboard()
-                    MainAction.ImportConfigLocal -> importConfigLocal()
-                    is MainAction.ImportManually -> importManually(action.type)
-                    MainAction.RestartService -> restartV2Ray()
-                    MainAction.LocateSelectedServer -> mainViewModel.triggerLocateSelectedServer()
-                    is MainAction.SelectServer -> setSelectServer(action.guid)
-                    is MainAction.EditServer -> editServer(action.guid, action.profile)
-                    is MainAction.ShareClipboard -> shareToClipboard(action.guid)
-                    is MainAction.ShareFullContent -> shareFullContentAsync(action.guid)
-                    else -> mainViewModel.onAction(action)
-                }
-            },
-            onNavigate = { route -> navigateTo(route) },
-        )
+        androidx.compose.runtime.LaunchedEffect(Unit) {
+            startActivity(Intent(this@MainActivity, com.v2ray.ang.ui.tiknet.TikNetMainActivity::class.java))
+            finish()
+        }
     }
 
     private fun shareToClipboard(guid: String): Boolean =

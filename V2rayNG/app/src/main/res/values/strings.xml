@@ -2,7 +2,7 @@
 <resources>
     <string name="app_name" translatable="false">TikNet</string>
     <string name="tiknet_brand" translatable="false">TikNet</string>
-    <string name="tiknet_login_subtitle">ورود به پنل</string>
+    <string name="tiknet_login_subtitle">ورود امن به حساب شما</string>
     <string name="tiknet_username_hint">نام کاربری</string>
     <string name="tiknet_password_hint">رمز عبور</string>
     <string name="tiknet_login_btn">ورود</string>
@@ -32,7 +32,7 @@
     <string name="pull_down_to_refresh">Please pull down to refresh!</string>
 
     <!-- Notifications -->
-    <string name="notification_action_stop_v2ray">Stop</string>
+    <string name="notification_action_stop_v2ray">قطع اتصال</string>
     <string name="toast_permission_denied">Permission denied</string>
     <string name="toast_permission_denied_notification">Notification permission denied</string>
     <string name="notification_action_more">Tap for more</string>

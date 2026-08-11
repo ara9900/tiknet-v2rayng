@@ -14,7 +14,6 @@ import com.v2ray.ang.tiknet.TikNetApiException
 import com.v2ray.ang.tiknet.TikNetPrefs
 import com.v2ray.ang.tiknet.TikNetSync
 import androidx.appcompat.app.AppCompatActivity
-import com.v2ray.ang.ui.main.MainActivity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -66,7 +65,7 @@ class TikNetLoginActivity : AppCompatActivity() {
     }
 
     private fun goMain() {
-        startActivity(Intent(this, MainActivity::class.java))
+        startActivity(Intent(this, TikNetMainActivity::class.java))
         finish()
     }
 }

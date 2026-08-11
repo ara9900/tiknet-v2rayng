@@ -63,4 +63,39 @@ object TikNetPrefs {
             .map { it.trim().trim('"') }
             .filter { it.startsWith("http") }
     }
+
+    private const val KEY_CACHED_PROFILE = "cached_profile_json"
+
+    fun saveCachedProfile(ctx: Context, user: TikNetUserInfo) {
+        val json = org.json.JSONObject()
+            .put("username", user.username)
+            .put("full_name", user.fullName)
+            .put("expire_date", user.expireDate)
+            .put("has_subscription", user.hasSubscription)
+            .put("plan_name", user.planName)
+            .put("is_expired", user.isExpired)
+            .put("days_remaining", user.daysRemaining)
+            .put("traffic_used_bytes", user.trafficUsedBytes)
+            .put("traffic_limit_bytes", user.trafficLimitBytes)
+            .toString()
+        prefs(ctx).edit().putString(KEY_CACHED_PROFILE, json).apply()
+    }
+
+    fun getCachedProfile(ctx: Context): TikNetUserInfo? {
+        val raw = prefs(ctx).getString(KEY_CACHED_PROFILE, null) ?: return null
+        return runCatching {
+            val o = org.json.JSONObject(raw)
+            TikNetUserInfo(
+                username = o.optString("username"),
+                fullName = o.optString("full_name").takeIf { it.isNotBlank() },
+                expireDate = o.optString("expire_date").takeIf { it.isNotBlank() },
+                hasSubscription = o.optBoolean("has_subscription"),
+                planName = o.optString("plan_name").takeIf { it.isNotBlank() },
+                isExpired = if (o.has("is_expired") && !o.isNull("is_expired")) o.optBoolean("is_expired") else null,
+                daysRemaining = if (o.has("days_remaining") && !o.isNull("days_remaining")) o.optInt("days_remaining") else null,
+                trafficUsedBytes = if (o.has("traffic_used_bytes") && !o.isNull("traffic_used_bytes")) o.optLong("traffic_used_bytes") else null,
+                trafficLimitBytes = if (o.has("traffic_limit_bytes") && !o.isNull("traffic_limit_bytes")) o.optLong("traffic_limit_bytes") else null,
+            )
+        }.getOrNull()
+    }
 }
