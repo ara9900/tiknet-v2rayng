@@ -142,6 +142,10 @@ class MainViewModel(
             is MainServiceEvent.MeasureConfigFinish -> {
                 onTestsFinished()
             }
+
+            is MainServiceEvent.TrafficUpdate -> {
+                // Handled by TikNetMainViewModel; ignore in stock main UI.
+            }
         }
     }
 

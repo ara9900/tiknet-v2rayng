@@ -697,7 +697,6 @@ private fun ConnectPowerButton(
             if (busy) {
                 CircularProgressIndicator(
                     color = Color.White,
-                    strokeWidth = 3.dp,
                     modifier = Modifier.size(48.dp),
                 )
             } else {
@@ -748,7 +747,7 @@ private fun ServerPickerSheet(
             }
             IconButton(onClick = onPingAll, enabled = !state.isPinging) {
                 if (state.isPinging) {
-                    CircularProgressIndicator(Modifier = Modifier.size(22.dp), strokeWidth = 2.dp, color = TikPrimary)
+                    CircularProgressIndicator(modifier = Modifier.size(22.dp), color = TikPrimary)
                 } else {
                     Icon(Icons.Outlined.Speed, contentDescription = "پینگ", tint = TikOnBg)
                 }
@@ -1502,7 +1501,7 @@ private fun AccountTab(
                 colors = ButtonDefaults.buttonColors(containerColor = TikPrimary, contentColor = Color.White),
             ) {
                 if (state.busy) {
-                    CircularProgressIndicator(Modifier = Modifier.size(22.dp), strokeWidth = 2.dp, color = Color.White)
+                    CircularProgressIndicator(modifier = Modifier.size(22.dp), color = Color.White)
                     Spacer(Modifier.width(10.dp))
                     Text("در حال بروزرسانی…")
                 } else {
