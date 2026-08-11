@@ -157,7 +157,7 @@ class TikNetMainViewModel(
             runCatching { TikNetSync.syncPersonalSubscription(getApplication()) }
             withContext(Dispatchers.Main) {
                 refreshServers()
-                pingAllServers()
+                // Avoid auto real-ping storm on every launch (heavy on high-core phones).
             }
         }
     }

@@ -32,20 +32,29 @@ object NotificationManager {
     private const val NOTIFICATION_PENDING_INTENT_CONTENT = 0
     private const val NOTIFICATION_PENDING_INTENT_STOP_V2RAY = 1
     private const val NOTIFICATION_PENDING_INTENT_RESTART_V2RAY = 2
-    private const val NOTIFICATION_ICON_THRESHOLD = 3000
-    private const val QUERY_INTERVAL_MS = 3000L
+
+    /** Poll core stats for TikNet details UI. */
+    private const val QUERY_INTERVAL_MS = 2_000L
+
+    /**
+     * Live speed text in the shade hammers SystemUI on One UI 8 / Android 16
+     * (notification panel freezes). Keep the FGS notification static unless the
+     * user explicitly wants speed-in-notification — and even then throttle hard.
+     */
+    private const val NOTIFY_MIN_INTERVAL_MS = 30_000L
 
     private var lastQueryTime = 0L
+    private var lastNotifyAt = 0L
+    private var lastNotifyText: String? = null
     private var mBuilder: NotificationCompat.Builder? = null
     private var speedNotificationJob: Job? = null
     private var mNotificationManager: NotificationManager? = null
 
     /**
-     * Starts the speed notification.
-     * @param currentConfig The current profile configuration.
+     * Starts the traffic monitor (UI broadcast). Optionally refreshes notification text
+     * only when [AppConfig.PREF_SPEED_ENABLED] is true and enough time has passed.
      */
     fun startSpeedNotification() {
-        if (MmkvManager.decodeSettingsBool(AppConfig.PREF_SPEED_ENABLED) != true) return
         if (speedNotificationJob != null || CoreServiceManager.isRunning() == false) return
 
         var lastZeroSpeed = false
@@ -67,6 +76,8 @@ object NotificationManager {
 
         // Reset last query time to avoid querying stats too soon after showing the notification
         lastQueryTime = System.currentTimeMillis()
+        lastNotifyAt = 0L
+        lastNotifyText = null
 
         val flags = PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
 
@@ -87,18 +98,22 @@ object NotificationManager {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 createNotificationChannel()
             } else {
-                // If earlier version channel ID is not used
-                // https://developer.android.com/reference/android/support/v4/app/NotificationCompat.Builder.html#NotificationCompat.Builder(android.content.Context)
                 ""
             }
 
+        val title = currentConfig?.remarks ?: service.getString(R.string.app_name)
         mBuilder = NotificationCompat.Builder(service, channelId)
             .setSmallIcon(R.drawable.ic_stat_tiknet)
-            .setContentTitle(currentConfig?.remarks ?: service.getString(R.string.app_name))
-            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setContentTitle(title)
+            .setContentText("متصل")
+            .setPriority(NotificationCompat.PRIORITY_MIN)
+            .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .setOngoing(true)
+            .setSilent(true)
             .setShowWhen(false)
             .setOnlyAlertOnce(true)
+            .setLocalOnly(true)
+            .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
             .setContentIntent(contentPendingIntent)
             .addAction(
                 R.drawable.ic_delete_24dp,
@@ -110,8 +125,6 @@ object NotificationManager {
                 service.getString(R.string.title_service_restart),
                 restartV2RayPendingIntent
             )
-
-        //mBuilder?.setDefaults(NotificationCompat.FLAG_ONLY_ALERT_ONCE)
 
         service.startForeground(NOTIFICATION_ID, mBuilder?.build())
     }
@@ -138,6 +151,8 @@ object NotificationManager {
         speedNotificationJob?.cancel()
         speedNotificationJob = null
         mNotificationManager = null
+        lastNotifyText = null
+        lastNotifyAt = 0L
     }
 
     /**
@@ -147,7 +162,7 @@ object NotificationManager {
         speedNotificationJob?.let {
             it.cancel()
             speedNotificationJob = null
-            updateNotification("", 0, 0)
+            // Keep a static connected notification — do not poke SystemUI with empty rebuilds.
         }
     }
 
@@ -159,27 +174,36 @@ object NotificationManager {
     private fun createNotificationChannel(): String {
         val channelId = AppConfig.RAY_NG_CHANNEL_ID
         val channelName = AppConfig.RAY_NG_CHANNEL_NAME
-        // Foreground-service notifications must remain visible; LOW is silent but valid.
-        val chan = NotificationChannel(channelId, channelName, NotificationManager.IMPORTANCE_LOW)
+        // MIN keeps shade updates cheap; FGS still shows as ongoing on modern Android.
+        val importance =
+            if (Build.VERSION.SDK_INT >= 36) NotificationManager.IMPORTANCE_MIN
+            else NotificationManager.IMPORTANCE_LOW
+        val chan = NotificationChannel(channelId, channelName, importance)
         chan.lightColor = Color.DKGRAY
         chan.lockscreenVisibility = Notification.VISIBILITY_PRIVATE
+        chan.setShowBadge(false)
+        chan.enableVibration(false)
+        chan.setSound(null, null)
         getNotificationManager()?.createNotificationChannel(chan)
         return channelId
     }
 
     /**
-     * Updates the notification with the given content text and traffic data.
-     * @param contentText The content text.
-     * @param proxyTraffic The proxy traffic.
-     * @param directTraffic The direct traffic.
+     * Updates the notification with the given content text.
+     * Heavily throttled — frequent notify() freezes the Samsung notification panel.
      */
-    private fun updateNotification(contentText: String?, proxyTraffic: Long, directTraffic: Long) {
-        if (mBuilder != null) {
-            mBuilder?.setSmallIcon(R.drawable.ic_stat_tiknet)
-            mBuilder?.setStyle(NotificationCompat.BigTextStyle().bigText(contentText))
-            mBuilder?.setContentText(contentText)
-            getNotificationManager()?.notify(NOTIFICATION_ID, mBuilder?.build())
-        }
+    private fun updateNotification(contentText: String) {
+        if (mBuilder == null) return
+        if (contentText == lastNotifyText) return
+        val now = System.currentTimeMillis()
+        if (now - lastNotifyAt < NOTIFY_MIN_INTERVAL_MS) return
+
+        // Short single-line text only — BigTextStyle forces expensive SystemUI remeasure.
+        mBuilder?.setStyle(null)
+        mBuilder?.setContentText(contentText.take(80))
+        getNotificationManager()?.notify(NOTIFICATION_ID, mBuilder?.build())
+        lastNotifyText = contentText
+        lastNotifyAt = now
     }
 
     /**
@@ -196,10 +220,6 @@ object NotificationManager {
 
     /**
      * Appends the speed string to the given text.
-     * @param text The text to append to.
-     * @param name The name of the tag.
-     * @param up The uplink speed.
-     * @param down The downlink speed.
      */
     private fun appendSpeedString(text: StringBuilder, name: String?, up: Double, down: Double) {
         var n = name ?: "no tag"
@@ -212,22 +232,19 @@ object NotificationManager {
     }
 
     /**
-     * Updates the speed notification once.
-     * Queries traffic stats, separates proxy and direct, and updates the notification.
-     * @param lastZeroSpeed The previous zero speed state.
-     * @return The current zero speed state.
+     * Queries traffic stats, broadcasts rates to TikNet UI, and optionally updates
+     * the system notification (throttled / disabled on Android 16+).
      */
     private fun updateSpeedNotificationOnce(lastZeroSpeed: Boolean): Boolean {
         val queryTime = System.currentTimeMillis()
         val sinceLastQueryIn = (queryTime - lastQueryTime)
 
-        // If the query interval is too short, skip this round to avoid excessive CPU usage
         if (sinceLastQueryIn < QUERY_INTERVAL_MS) {
             LogUtil.w(AppConfig.TAG, "Query interval too short: ${sinceLastQueryIn}ms, skipping")
             lastQueryTime = queryTime
             return lastZeroSpeed
         }
-        val sinceLastQueryInSeconds = sinceLastQueryIn / 1000.0
+        val sinceLastQueryInSeconds = (sinceLastQueryIn / 1000.0).coerceAtLeast(0.5)
 
         var proxyUplink = 0L
         var proxyDownlink = 0L
@@ -243,7 +260,6 @@ object NotificationManager {
                     }
                 }
 
-                // Accumulate stats for all proxy outbounds (including custom subscription tags)
                 stat.tag != AppConfig.TAG_BLOCKED -> {
                     when (stat.direction) {
                         AppConfig.UPLINK -> proxyUplink += stat.value
@@ -256,32 +272,40 @@ object NotificationManager {
         val proxyTotal = proxyUplink + proxyDownlink
         val directTotal = directUplink + directDownlink
         val zeroSpeed = proxyTotal + directTotal == 0L
-        if (!zeroSpeed || !lastZeroSpeed) {
+
+        val rateUp = (proxyUplink / sinceLastQueryInSeconds).toLong()
+        val rateDown = (proxyDownlink / sinceLastQueryInSeconds).toLong()
+
+        // Always feed the in-app details UI — this does not touch SystemUI.
+        runCatching {
+            MessageHelper.sendMsg2UI(
+                getService() ?: return@runCatching,
+                AppConfig.MSG_TRAFFIC_UPDATE,
+                "$rateUp|$rateDown|$proxyUplink|$proxyDownlink"
+            )
+        }
+
+        // Live notification text: off by default on Android 16+ (API 36); elsewhere only
+        // when PREF_SPEED_ENABLED and not consecutive zero-speed ticks.
+        val allowLiveNotif =
+            Build.VERSION.SDK_INT < 36 &&
+                MmkvManager.decodeSettingsBool(AppConfig.PREF_SPEED_ENABLED) == true
+
+        if (allowLiveNotif && (!zeroSpeed || !lastZeroSpeed)) {
             val text = StringBuilder()
             appendSpeedString(
                 text, AppConfig.TAG_PROXY,
                 proxyUplink / sinceLastQueryInSeconds,
                 proxyDownlink / sinceLastQueryInSeconds
             )
-
             appendSpeedString(
                 text, AppConfig.TAG_DIRECT,
                 directUplink / sinceLastQueryInSeconds,
                 directDownlink / sinceLastQueryInSeconds
             )
-            updateNotification(text.toString(), proxyTotal, directTotal)
-
-            // Broadcast live rates + deltas for TikNet details UI
-            runCatching {
-                val rateUp = (proxyUplink / sinceLastQueryInSeconds).toLong()
-                val rateDown = (proxyDownlink / sinceLastQueryInSeconds).toLong()
-                MessageHelper.sendMsg2UI(
-                    getService() ?: return@runCatching,
-                    AppConfig.MSG_TRAFFIC_UPDATE,
-                    "$rateUp|$rateDown|$proxyUplink|$proxyDownlink"
-                )
-            }
+            updateNotification(text.toString().trim())
         }
+
         lastQueryTime = queryTime
         return zeroSpeed
     }
