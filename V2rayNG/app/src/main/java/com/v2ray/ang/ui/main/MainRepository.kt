@@ -70,6 +70,10 @@ class MainRepository(
                     safeIntent.getStringExtra("content")
                 )
 
+                AppConfig.MSG_TRAFFIC_UPDATE -> MainServiceEvent.TrafficUpdate(
+                    safeIntent.getStringExtra("content").orEmpty()
+                )
+
                 else -> null
             }
             event?.let { _mainServiceEvent.tryEmit(it) }

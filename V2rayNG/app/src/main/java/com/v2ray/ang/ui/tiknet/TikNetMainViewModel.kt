@@ -1,6 +1,11 @@
 package com.v2ray.ang.ui.tiknet
 
 import android.app.Application
+import android.content.Context
+import android.content.Intent
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
+import android.provider.Settings
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -8,22 +13,38 @@ import androidx.lifecycle.viewModelScope
 import com.v2ray.ang.AngApplication
 import com.v2ray.ang.AppConfig
 import com.v2ray.ang.BuildConfig
+import com.v2ray.ang.dto.AppInfo
+import com.v2ray.ang.dto.TestServiceMessage
 import com.v2ray.ang.dto.entities.ProfileItem
 import com.v2ray.ang.handler.MmkvManager
+import com.v2ray.ang.handler.SpeedtestManager
 import com.v2ray.ang.helper.MessageHelper
+import com.v2ray.ang.tiknet.TikNetAnnouncement
 import com.v2ray.ang.tiknet.TikNetApi
+import com.v2ray.ang.tiknet.TikNetFaqItem
+import com.v2ray.ang.tiknet.TikNetNotificationItem
 import com.v2ray.ang.tiknet.TikNetPrefs
 import com.v2ray.ang.tiknet.TikNetSync
 import com.v2ray.ang.tiknet.TikNetUserInfo
 import com.v2ray.ang.ui.main.MainRepository
 import com.v2ray.ang.ui.main.MainServiceEvent
+import com.v2ray.ang.util.AppManagerUtil
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.net.HttpURLConnection
+import java.net.InetAddress
+import java.net.URL
 
 enum class TikNetConnPhase {
     Disconnected,
@@ -39,19 +60,54 @@ data class TikNetServerItem(
     val pingMs: Long?,
 )
 
+data class TikNetDiagItem(
+    val title: String,
+    val detail: String,
+    val ok: Boolean,
+    val settingsAction: String? = null,
+)
+
 data class TikNetMainUiState(
     val phase: TikNetConnPhase = TikNetConnPhase.Disconnected,
-    val statusMessage: String = "",
+    val smartPicking: Boolean = false,
+    val smartMode: Boolean = true,
     val selectedGuid: String? = null,
-    val selectedTitle: String = "انتخاب سرور",
+    val selectedTitle: String = "اتصال هوشمند",
     val servers: List<TikNetServerItem> = emptyList(),
+    val isPinging: Boolean = false,
     val user: TikNetUserInfo? = null,
     val busy: Boolean = false,
     val syncMessage: String? = null,
     val error: String? = null,
     val currentDelayText: String = "",
+    val exitIpText: String = "",
+    val uplinkSpeed: Long = 0,
+    val downlinkSpeed: Long = 0,
+    val sessionUp: Long = 0,
+    val sessionDown: Long = 0,
+    val connectedAtMs: Long? = null,
+    val uptimeTick: Long = 0,
+    val announcement: TikNetAnnouncement? = null,
     val appVersion: String = BuildConfig.VERSION_NAME,
+    // filter
+    val filterEnabled: Boolean = false,
+    val filterLoading: Boolean = false,
+    val filterApps: List<AppInfo> = emptyList(),
+    val filterSelected: Set<String> = emptySet(),
+    val filterQuery: String = "",
+    // account sheets data
+    val notifications: List<TikNetNotificationItem> = emptyList(),
+    val notificationsLoading: Boolean = false,
+    val faq: List<TikNetFaqItem> = emptyList(),
+    val faqLoading: Boolean = false,
+    val diagnostics: List<TikNetDiagItem> = emptyList(),
+    val diagnosticsLoading: Boolean = false,
 )
+
+sealed class TikNetUiEvent {
+    data object StartVpn : TikNetUiEvent()
+    data class Toast(val message: String) : TikNetUiEvent()
+}
 
 class TikNetMainViewModel(
     application: Application,
@@ -61,14 +117,27 @@ class TikNetMainViewModel(
     private val _ui = MutableStateFlow(TikNetMainUiState())
     val ui: StateFlow<TikNetMainUiState> = _ui.asStateFlow()
 
+    private val _events = MutableSharedFlow<TikNetUiEvent>(extraBufferCapacity = 8)
+    val events: SharedFlow<TikNetUiEvent> = _events.asSharedFlow()
+
+    private var pendingSmartConnect = false
+    private var uptimeJob: Job? = null
+    private var appsLoaded = false
+
     init {
+        // Enable live speed notifications → traffic broadcast for details
+        MmkvManager.encodeSettings(AppConfig.PREF_SPEED_ENABLED, true)
         refreshServers()
         observeService()
         MessageHelper.sendMsg2Service(application, AppConfig.MSG_REGISTER_CLIENT, "")
         viewModelScope.launch { loadUser(silent = true) }
+        viewModelScope.launch { loadAnnouncement() }
         viewModelScope.launch(Dispatchers.IO) {
             runCatching { TikNetSync.syncPersonalSubscription(getApplication()) }
-            withContext(Dispatchers.Main) { refreshServers() }
+            withContext(Dispatchers.Main) {
+                refreshServers()
+                pingAllServers()
+            }
         }
     }
 
@@ -81,26 +150,42 @@ class TikNetMainViewModel(
                         _ui.update {
                             it.copy(
                                 phase = TikNetConnPhase.Connected,
-                                statusMessage = "",
                                 busy = false,
+                                smartPicking = false,
+                                connectedAtMs = it.connectedAtMs ?: System.currentTimeMillis(),
+                                sessionUp = 0,
+                                sessionDown = 0,
                             )
                         }
                         refreshSelected()
+                        startUptimeTicker()
                         MessageHelper.sendMsg2Service(
                             getApplication(),
                             AppConfig.MSG_MEASURE_DELAY,
                             "",
                         )
+                        viewModelScope.launch(Dispatchers.IO) {
+                            delay(1200)
+                            val ip = runCatching { SpeedtestManager.getRemoteIPInfo() }.getOrNull()
+                            if (!ip.isNullOrBlank()) {
+                                _ui.update { it.copy(exitIpText = ip) }
+                            }
+                        }
                     }
 
                     MainServiceEvent.StateNotRunning,
                     MainServiceEvent.StateStopSuccess -> {
+                        stopUptimeTicker()
                         _ui.update {
                             it.copy(
                                 phase = TikNetConnPhase.Disconnected,
-                                statusMessage = "",
                                 busy = false,
+                                smartPicking = false,
                                 currentDelayText = "",
+                                exitIpText = "",
+                                uplinkSpeed = 0,
+                                downlinkSpeed = 0,
+                                connectedAtMs = null,
                             )
                         }
                     }
@@ -110,13 +195,67 @@ class TikNetMainViewModel(
                             it.copy(
                                 phase = TikNetConnPhase.Disconnected,
                                 busy = false,
+                                smartPicking = false,
                                 error = event.errorMessage.ifBlank { "اتصال ناموفق" },
                             )
                         }
                     }
 
                     is MainServiceEvent.MeasureDelaySuccess -> {
-                        _ui.update { it.copy(currentDelayText = event.content) }
+                        val lines = event.content.lines().map { it.trim() }.filter { it.isNotEmpty() }
+                        val delayLine = lines.firstOrNull().orEmpty()
+                        val ipLine = lines.firstOrNull { it.startsWith("(") && it.contains(")") }.orEmpty()
+                        _ui.update {
+                            it.copy(
+                                currentDelayText = delayLine,
+                                exitIpText = ipLine.ifBlank { it.exitIpText },
+                            )
+                        }
+                    }
+
+                    is MainServiceEvent.TrafficUpdate -> {
+                        val p = event.content.split("|")
+                        if (p.size >= 4) {
+                            val rateUp = p[0].toLongOrNull() ?: 0L
+                            val rateDown = p[1].toLongOrNull() ?: 0L
+                            val dUp = p[2].toLongOrNull() ?: 0L
+                            val dDown = p[3].toLongOrNull() ?: 0L
+                            _ui.update {
+                                it.copy(
+                                    uplinkSpeed = rateUp,
+                                    downlinkSpeed = rateDown,
+                                    sessionUp = it.sessionUp + dUp,
+                                    sessionDown = it.sessionDown + dDown,
+                                )
+                            }
+                        }
+                    }
+
+                    is MainServiceEvent.MeasureConfigNotify -> {
+                        // keep pinging flag
+                        _ui.update { it.copy(isPinging = true) }
+                    }
+
+                    is MainServiceEvent.MeasureConfigFinish,
+                    MainServiceEvent.MeasureConfigSuccess -> {
+                        refreshServers()
+                        _ui.update { it.copy(isPinging = false) }
+                        if (pendingSmartConnect) {
+                            pendingSmartConnect = false
+                            val best = pickBestGuid()
+                            if (best != null) {
+                                selectServer(best, smartLabel = true)
+                                _events.tryEmit(TikNetUiEvent.StartVpn)
+                            } else {
+                                _ui.update {
+                                    it.copy(
+                                        smartPicking = false,
+                                        phase = TikNetConnPhase.Disconnected,
+                                        error = "سروری با پینگ معتبر پیدا نشد",
+                                    )
+                                }
+                            }
+                        }
                     }
 
                     else -> Unit
@@ -125,23 +264,35 @@ class TikNetMainViewModel(
         }
     }
 
+    private fun startUptimeTicker() {
+        uptimeJob?.cancel()
+        uptimeJob = viewModelScope.launch {
+            while (isActive) {
+                _ui.update { it.copy(uptimeTick = System.currentTimeMillis()) }
+                delay(1000)
+            }
+        }
+    }
+
+    private fun stopUptimeTicker() {
+        uptimeJob?.cancel()
+        uptimeJob = null
+    }
+
     fun refreshServers() {
         val guids = linkedSetOf<String>()
         guids.addAll(MmkvManager.decodeServerList(TikNetPrefs.TIKNET_SUB_GUID))
-        // Include any catalog imports
         MmkvManager.decodeSubsList().forEach { subId ->
             if (subId.startsWith("tiknet-")) {
                 guids.addAll(MmkvManager.decodeServerList(subId))
             }
         }
-        if (guids.isEmpty()) {
-            guids.addAll(MmkvManager.decodeAllServerList())
-        }
+        if (guids.isEmpty()) guids.addAll(MmkvManager.decodeAllServerList())
         val selected = MmkvManager.getSelectServer()
         val items = guids.mapNotNull { guid ->
             val cfg = MmkvManager.decodeServerConfig(guid) ?: return@mapNotNull null
             val aff = MmkvManager.decodeServerAffiliationInfo(guid)
-            val ping = aff?.testDelayMillis?.takeIf { it > 0 }
+            val ping = aff?.testDelayMillis?.takeIf { it > 0 && it < 65000 }
             TikNetServerItem(
                 guid = guid,
                 remarks = cfg.remarks.ifBlank { "سرور" },
@@ -150,15 +301,15 @@ class TikNetMainViewModel(
             )
         }
         val selectedItem = items.firstOrNull { it.guid == selected }
-            ?: items.firstOrNull()
-        if (selectedItem != null && selected != selectedItem.guid) {
-            MmkvManager.setSelectServer(selectedItem.guid)
-        }
         _ui.update {
             it.copy(
                 servers = items,
-                selectedGuid = selectedItem?.guid,
-                selectedTitle = selectedItem?.remarks ?: "انتخاب سرور",
+                selectedGuid = selectedItem?.guid ?: selected,
+                selectedTitle = when {
+                    it.smartMode && selectedItem == null -> "اتصال هوشمند"
+                    selectedItem != null -> selectedItem.remarks
+                    else -> "انتخاب سرور"
+                },
             )
         }
     }
@@ -169,14 +320,104 @@ class TikNetMainViewModel(
         _ui.update {
             it.copy(
                 selectedGuid = guid,
-                selectedTitle = cfg?.remarks?.ifBlank { "سرور" } ?: "انتخاب سرور",
+                selectedTitle = cfg?.remarks?.ifBlank { "سرور" } ?: it.selectedTitle,
             )
         }
     }
 
-    fun selectServer(guid: String) {
+    fun selectServer(guid: String, smartLabel: Boolean = false) {
         MmkvManager.setSelectServer(guid)
+        val cfg = MmkvManager.decodeServerConfig(guid)
+        _ui.update {
+            it.copy(
+                smartMode = smartLabel,
+                selectedGuid = guid,
+                selectedTitle = if (smartLabel) "اتصال هوشمند · ${cfg?.remarks.orEmpty()}"
+                else cfg?.remarks?.ifBlank { "سرور" } ?: "سرور",
+            )
+        }
         refreshServers()
+    }
+
+    fun enableSmartMode() {
+        _ui.update { it.copy(smartMode = true, selectedTitle = "اتصال هوشمند") }
+    }
+
+    fun pingAllServers() {
+        val guids = _ui.value.servers.map { it.guid }
+        if (guids.isEmpty()) {
+            refreshServers()
+        }
+        val list = _ui.value.servers.map { it.guid }.ifEmpty {
+            MmkvManager.decodeServerList(TikNetPrefs.TIKNET_SUB_GUID)
+        }
+        if (list.isEmpty()) return
+        _ui.update { it.copy(isPinging = true) }
+        // TCP when disconnected (real outbound measure needs core); real when connected
+        val onlyTcp = _ui.value.phase != TikNetConnPhase.Connected
+        MessageHelper.sendMsg2TestService(
+            getApplication(),
+            TestServiceMessage(
+                key = AppConfig.MSG_MEASURE_CONFIG_START,
+                subscriptionId = TikNetPrefs.TIKNET_SUB_GUID,
+                serverGuids = list,
+                onlyTcp = onlyTcp,
+            ),
+        )
+    }
+
+    private fun pickBestGuid(): String? {
+        refreshServers()
+        return _ui.value.servers
+            .filter { it.pingMs != null && it.pingMs > 0 && it.pingMs < 65000 }
+            .minByOrNull { it.pingMs!! }
+            ?.guid
+            ?: _ui.value.servers.firstOrNull()?.guid
+    }
+
+    /** Power button: smart → ping then connect; manual → connect selected. */
+    fun requestConnect() {
+        _ui.update { it.copy(error = null) }
+        if (_ui.value.smartMode) {
+            _ui.update {
+                it.copy(
+                    phase = TikNetConnPhase.Connecting,
+                    smartPicking = true,
+                    busy = true,
+                )
+            }
+            pendingSmartConnect = true
+            pingAllServers()
+            // Fallback if ping service never finishes
+            viewModelScope.launch {
+                delay(12_000)
+                if (pendingSmartConnect) {
+                    pendingSmartConnect = false
+                    val best = pickBestGuid()
+                    if (best != null) {
+                        selectServer(best, smartLabel = true)
+                        _events.tryEmit(TikNetUiEvent.StartVpn)
+                    } else {
+                        _ui.update {
+                            it.copy(
+                                smartPicking = false,
+                                phase = TikNetConnPhase.Disconnected,
+                                busy = false,
+                                error = "سروری آماده نیست",
+                            )
+                        }
+                    }
+                }
+            }
+        } else {
+            if (!ensureServerSelected()) {
+                _ui.update { it.copy(error = "ابتدا سرور را انتخاب کنید یا اشتراک را بروزرسانی کنید") }
+                syncSubscription()
+                return
+            }
+            markConnecting()
+            _events.tryEmit(TikNetUiEvent.StartVpn)
+        }
     }
 
     fun markConnecting() {
@@ -187,7 +428,7 @@ class TikNetMainViewModel(
 
     fun markDisconnecting() {
         _ui.update {
-            it.copy(phase = TikNetConnPhase.Disconnecting, busy = true, error = null)
+            it.copy(phase = TikNetConnPhase.Disconnecting, busy = true, error = null, smartPicking = false)
         }
     }
 
@@ -211,10 +452,9 @@ class TikNetMainViewModel(
                     TikNetSync.syncPersonalSubscription(getApplication())
                 }
                 refreshServers()
-                _ui.update {
-                    it.copy(busy = false, syncMessage = "$n کانفیگ وارد شد")
-                }
+                pingAllServers()
                 loadUser(silent = true)
+                _ui.update { it.copy(busy = false, syncMessage = "$n کانفیگ وارد شد") }
             } catch (e: Exception) {
                 _ui.update {
                     it.copy(busy = false, syncMessage = e.message ?: "همگام‌سازی ناموفق")
@@ -236,25 +476,155 @@ class TikNetMainViewModel(
             } catch (e: Exception) {
                 val cached = TikNetPrefs.getCachedProfile(getApplication())
                 _ui.update {
-                    it.copy(
-                        user = cached ?: it.user,
-                        busy = false,
-                        error = if (silent) it.error else (e.message ?: "خطا در خواندن حساب"),
-                    )
+                    it.copy(user = cached ?: it.user, busy = false)
                 }
             }
         }
     }
 
-    fun clearSyncMessage() {
-        _ui.update { it.copy(syncMessage = null) }
+    fun loadAnnouncement() {
+        viewModelScope.launch {
+            val ctx = getApplication<Application>()
+            val ann = withContext(Dispatchers.IO) {
+                TikNetApi.getAnnouncement(TikNetPrefs.getBaseUrl(ctx), TikNetPrefs.getAccessToken(ctx))
+            }
+            _ui.update { it.copy(announcement = ann) }
+        }
+    }
+
+    // ---- App filter ----
+    fun ensureAppsLoaded() {
+        if (appsLoaded || _ui.value.filterLoading) return
+        viewModelScope.launch {
+            _ui.update { it.copy(filterLoading = true) }
+            val apps = withContext(Dispatchers.IO) {
+                AppManagerUtil.loadNetworkAppList(getApplication())
+                    .filter { it.packageName != getApplication<Application>().packageName }
+                    .sortedBy { it.appName.lowercase() }
+            }
+            val selected = MmkvManager.decodeSettingsStringSet(AppConfig.PREF_PER_APP_PROXY_SET)?.toSet()
+                ?: emptySet()
+            appsLoaded = true
+            _ui.update {
+                it.copy(
+                    filterLoading = false,
+                    filterApps = apps,
+                    filterSelected = selected,
+                    filterEnabled = MmkvManager.decodeSettingsBool(AppConfig.PREF_PER_APP_PROXY, false),
+                )
+            }
+        }
+    }
+
+    fun setFilterEnabled(enabled: Boolean) {
+        MmkvManager.encodeSettings(AppConfig.PREF_PER_APP_PROXY, enabled)
+        _ui.update { it.copy(filterEnabled = enabled) }
+    }
+
+    fun setFilterQuery(q: String) {
+        _ui.update { it.copy(filterQuery = q) }
+    }
+
+    fun toggleFilterApp(packageName: String) {
+        val cur = _ui.value.filterSelected.toMutableSet()
+        if (!cur.add(packageName)) cur.remove(packageName)
+        MmkvManager.encodeSettings(AppConfig.PREF_PER_APP_PROXY_SET, cur.toMutableSet())
+        _ui.update { it.copy(filterSelected = cur) }
+    }
+
+    fun filteredApps(): List<AppInfo> {
+        val q = _ui.value.filterQuery.trim()
+        val all = _ui.value.filterApps
+        if (q.isEmpty()) return all
+        return all.filter {
+            it.appName.contains(q, ignoreCase = true) || it.packageName.contains(q, ignoreCase = true)
+        }
+    }
+
+    // ---- Account services ----
+    fun loadNotifications() {
+        viewModelScope.launch {
+            _ui.update { it.copy(notificationsLoading = true) }
+            try {
+                val ctx = getApplication<Application>()
+                val base = TikNetPrefs.getBaseUrl(ctx)!!
+                val token = TikNetPrefs.getAccessToken(ctx)!!
+                val (list, _) = withContext(Dispatchers.IO) { TikNetApi.getNotifications(base, token) }
+                _ui.update { it.copy(notifications = list, notificationsLoading = false) }
+            } catch (e: Exception) {
+                _ui.update {
+                    it.copy(notificationsLoading = false, syncMessage = e.message ?: "خطا در اعلان‌ها")
+                }
+            }
+        }
+    }
+
+    fun markNotificationRead(id: Int) {
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching {
+                val ctx = getApplication<Application>()
+                TikNetApi.markNotificationRead(
+                    TikNetPrefs.getBaseUrl(ctx)!!,
+                    TikNetPrefs.getAccessToken(ctx)!!,
+                    id,
+                )
+            }
+            withContext(Dispatchers.Main) {
+                _ui.update {
+                    it.copy(notifications = it.notifications.map { n ->
+                        if (n.id == id) n.copy(read = true) else n
+                    })
+                }
+            }
+        }
+    }
+
+    fun loadFaq() {
+        viewModelScope.launch {
+            _ui.update { it.copy(faqLoading = true) }
+            try {
+                val ctx = getApplication<Application>()
+                val base = TikNetPrefs.getBaseUrl(ctx) ?: TikNetApi.resolveBaseUrl(ctx)
+                val list = withContext(Dispatchers.IO) { TikNetApi.getFaq(base) }
+                _ui.update { it.copy(faq = list, faqLoading = false) }
+            } catch (e: Exception) {
+                _ui.update { it.copy(faqLoading = false, faq = emptyList()) }
+            }
+        }
+    }
+
+    fun runDiagnostics() {
+        viewModelScope.launch {
+            _ui.update { it.copy(diagnosticsLoading = true, diagnostics = emptyList()) }
+            val items = withContext(Dispatchers.IO) { collectDiagnostics(getApplication()) }
+            _ui.update { it.copy(diagnostics = items, diagnosticsLoading = false) }
+        }
+    }
+
+    fun openSettingsTarget(action: String?) {
+        val ctx = getApplication<Application>()
+        val intent = when (action) {
+            "date" -> Intent(Settings.ACTION_DATE_SETTINGS)
+            "vpn" -> Intent("android.net.vpn.SETTINGS")
+            "wireless" -> Intent(Settings.ACTION_WIRELESS_SETTINGS)
+            "airplane" -> Intent(Settings.ACTION_AIRPLANE_MODE_SETTINGS)
+            "battery" -> Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+            else -> Intent(Settings.ACTION_SETTINGS)
+        }
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        runCatching { ctx.startActivity(intent) }
     }
 
     fun logout() {
         TikNetPrefs.clearSession(getApplication())
     }
 
+    fun clearSyncMessage() {
+        _ui.update { it.copy(syncMessage = null) }
+    }
+
     override fun onCleared() {
+        stopUptimeTicker()
         repository.close()
         super.onCleared()
     }
@@ -265,6 +635,68 @@ class TikNetMainViewModel(
             val net = cfg.network?.takeIf { it.isNotBlank() }
             val sec = cfg.security?.takeIf { it.isNotBlank() }
             return listOfNotNull(type, net, sec).joinToString(" / ")
+        }
+
+        private fun collectDiagnostics(ctx: Context): List<TikNetDiagItem> {
+            val list = mutableListOf<TikNetDiagItem>()
+            val cm = ctx.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+            val net = cm.activeNetwork
+            val caps = net?.let { cm.getNetworkCapabilities(it) }
+            val hasNet = caps?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
+            list += TikNetDiagItem(
+                "شبکه فعال",
+                if (hasNet) "اتصال اینترنت برقرار است" else "اینترنت در دسترس نیست",
+                hasNet,
+                "wireless",
+            )
+            val airplane = Settings.Global.getInt(ctx.contentResolver, Settings.Global.AIRPLANE_MODE_ON, 0) == 1
+            list += TikNetDiagItem(
+                "حالت هواپیما",
+                if (airplane) "روشن است — خاموشش کنید" else "خاموش",
+                !airplane,
+                "airplane",
+            )
+            val vpn = caps?.hasTransport(NetworkCapabilities.TRANSPORT_VPN) == true
+            list += TikNetDiagItem(
+                "VPN دیگر",
+                if (vpn) "یک VPN دیگر فعال است" else "VPN دیگری فعال نیست",
+                true,
+                "vpn",
+            )
+            val dnsOk = runCatching {
+                InetAddress.getByName("www.gstatic.com")
+                true
+            }.getOrDefault(false)
+            list += TikNetDiagItem(
+                "DNS",
+                if (dnsOk) "رزولوشن دامنه موفق" else "مشکل در DNS",
+                dnsOk,
+                "wireless",
+            )
+            val httpOk = runCatching {
+                val c = (URL("https://www.gstatic.com/generate_204").openConnection() as HttpURLConnection)
+                c.connectTimeout = 5000
+                c.readTimeout = 5000
+                c.requestMethod = "GET"
+                c.connect()
+                val code = c.responseCode
+                c.disconnect()
+                code in 200..399
+            }.getOrDefault(false)
+            list += TikNetDiagItem(
+                "دسترسی HTTP",
+                if (httpOk) "پاسخ موفق از اینترنت" else "عدم دسترسی به اینترنت",
+                httpOk,
+                "wireless",
+            )
+            val autoTime = Settings.Global.getInt(ctx.contentResolver, Settings.Global.AUTO_TIME, 0) == 1
+            list += TikNetDiagItem(
+                "زمان خودکار",
+                if (autoTime) "فعال" else "غیرفعال — ممکن است TLS مشکل داشته باشد",
+                autoTime,
+                "date",
+            )
+            return list
         }
 
         class Factory(

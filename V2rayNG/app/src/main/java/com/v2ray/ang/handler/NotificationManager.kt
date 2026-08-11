@@ -16,6 +16,7 @@ import com.v2ray.ang.R
 import com.v2ray.ang.core.CoreServiceManager
 import com.v2ray.ang.dto.entities.ProfileItem
 import com.v2ray.ang.extension.toSpeedString
+import com.v2ray.ang.helper.MessageHelper
 import com.v2ray.ang.ui.tiknet.TikNetMainActivity
 import com.v2ray.ang.util.LogUtil
 import kotlinx.coroutines.CoroutineScope
@@ -275,6 +276,17 @@ object NotificationManager {
                 directDownlink / sinceLastQueryInSeconds
             )
             updateNotification(text.toString(), proxyTotal, directTotal)
+
+            // Broadcast live rates + deltas for TikNet details UI
+            runCatching {
+                val rateUp = (proxyUplink / sinceLastQueryInSeconds).toLong()
+                val rateDown = (proxyDownlink / sinceLastQueryInSeconds).toLong()
+                MessageHelper.sendMsg2UI(
+                    getService() ?: return@runCatching,
+                    AppConfig.MSG_TRAFFIC_UPDATE,
+                    "$rateUp|$rateDown|$proxyUplink|$proxyDownlink"
+                )
+            }
         }
         lastQueryTime = queryTime
         return zeroSpeed

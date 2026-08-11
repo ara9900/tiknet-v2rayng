@@ -48,6 +48,28 @@ data class TikNetCatalogServer(
     val tier: String? = null,
 )
 
+data class TikNetAnnouncement(
+    val show: Boolean = false,
+    val type: String = "info",
+    val text: String = "",
+)
+
+data class TikNetNotificationItem(
+    val id: Int = 0,
+    val title: String = "",
+    val body: String = "",
+    val type: String = "info",
+    val read: Boolean = true,
+    @SerializedName("created_at") val createdAt: String? = null,
+)
+
+data class TikNetFaqItem(
+    val id: Int = 0,
+    val category: String? = null,
+    val question: String = "",
+    val answer: String = "",
+)
+
 /**
  * Panel HTTP client — API shapes mirrored from Flutter TikNet.
  */
@@ -158,6 +180,104 @@ object TikNetApi {
                 changelog = update.get("changelog")?.asString?.trim().orEmpty(),
                 sha256 = update.get("sha256")?.asString?.trim()?.lowercase().orEmpty(),
             )
+        }
+    }
+
+    fun getAnnouncement(baseUrl: String?, token: String?): TikNetAnnouncement {
+        // Panel first
+        if (!baseUrl.isNullOrBlank()) {
+            runCatching {
+                val b = Request.Builder()
+                    .url("${root(baseUrl)}/api/customer/announcement")
+                    .get()
+                    .header("Accept", "application/json")
+                if (!token.isNullOrBlank()) b.header("Authorization", "Bearer $token")
+                client.newCall(b.build()).execute().use { resp ->
+                    if (resp.isSuccessful) {
+                        val text = resp.body?.string().orEmpty()
+                        parseAnnouncement(text)?.let { return it }
+                    }
+                }
+            }
+        }
+        // GitHub fallback
+        runCatching {
+            val req = Request.Builder()
+                .url("https://ara9900.github.io/app-config/config.json")
+                .get()
+                .build()
+            client.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) return@use
+                val text = resp.body?.string().orEmpty()
+                parseAnnouncement(text)?.let { return it }
+            }
+        }
+        return TikNetAnnouncement(
+            show = true,
+            type = "success",
+            text = "تیکنت، مسیری مطمئن به دنیای اینترنت",
+        )
+    }
+
+    private fun parseAnnouncement(text: String): TikNetAnnouncement? {
+        val rootEl = runCatching { JsonParser.parseString(text).asJsonObject }.getOrNull() ?: return null
+        val msg = rootEl.getAsJsonObject("message") ?: return null
+        val show = msg.get("show")?.asBoolean ?: false
+        val body = msg.get("text")?.asString?.trim().orEmpty()
+        if (!show || body.isEmpty()) return TikNetAnnouncement(show = false)
+        return TikNetAnnouncement(
+            show = true,
+            type = msg.get("type")?.asString?.trim().orEmpty().ifBlank { "info" },
+            text = body,
+        )
+    }
+
+    fun getNotifications(baseUrl: String, token: String): Pair<List<TikNetNotificationItem>, Int> {
+        val req = Request.Builder()
+            .url("${root(baseUrl)}/api/customer/notifications")
+            .get()
+            .header("Authorization", "Bearer $token")
+            .header("Accept", "application/json")
+            .build()
+        client.newCall(req).execute().use { resp ->
+            if (!resp.isSuccessful) throw TikNetApiException("notifications HTTP ${resp.code}", resp.code)
+            val text = resp.body?.string().orEmpty()
+            val rootEl = JsonParser.parseString(text).asJsonObject
+            val arr = rootEl.getAsJsonArray("notifications") ?: return emptyList<TikNetNotificationItem>() to 0
+            val list = arr.mapNotNull {
+                runCatching { gson.fromJson(it, TikNetNotificationItem::class.java) }.getOrNull()
+            }
+            val unread = rootEl.get("unread_count")?.asInt ?: list.count { !it.read }
+            return list to unread
+        }
+    }
+
+    fun markNotificationRead(baseUrl: String, token: String, id: Int) {
+        val req = Request.Builder()
+            .url("${root(baseUrl)}/api/customer/notifications/$id/read")
+            .post("{}".toRequestBody(jsonMedia))
+            .header("Authorization", "Bearer $token")
+            .header("Accept", "application/json")
+            .build()
+        client.newCall(req).execute().use { resp ->
+            if (!resp.isSuccessful) throw TikNetApiException("read HTTP ${resp.code}", resp.code)
+        }
+    }
+
+    fun getFaq(baseUrl: String): List<TikNetFaqItem> {
+        val req = Request.Builder()
+            .url("${root(baseUrl)}/api/customer/faq")
+            .get()
+            .header("Accept", "application/json")
+            .build()
+        client.newCall(req).execute().use { resp ->
+            if (!resp.isSuccessful) throw TikNetApiException("faq HTTP ${resp.code}", resp.code)
+            val text = resp.body?.string().orEmpty()
+            val rootEl = JsonParser.parseString(text).asJsonObject
+            val arr = rootEl.getAsJsonArray("items") ?: return emptyList()
+            return arr.mapNotNull {
+                runCatching { gson.fromJson(it, TikNetFaqItem::class.java) }.getOrNull()
+            }
         }
     }
 

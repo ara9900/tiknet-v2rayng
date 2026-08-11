@@ -7,21 +7,17 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.v2ray.ang.AngApplication
-import com.v2ray.ang.AppConfig
 import com.v2ray.ang.core.LauncherManager
 import com.v2ray.ang.enums.PermissionType
-import com.v2ray.ang.handler.MmkvManager
 import com.v2ray.ang.handler.SettingsManager
 import com.v2ray.ang.tiknet.TikNetPrefs
 import com.v2ray.ang.ui.base.HelperBaseComponentActivity
 import com.v2ray.ang.ui.compose.ThemeManager
-import com.v2ray.ang.ui.perappproxy.PerAppProxyActivity
+import kotlinx.coroutines.flow.collectLatest
 
 class TikNetMainActivity : HelperBaseComponentActivity() {
 
@@ -52,12 +48,24 @@ class TikNetMainActivity : HelperBaseComponentActivity() {
     override fun ScreenContent() {
         BackHandler { moveTaskToBack(false) }
         val state by viewModel.ui.collectAsStateWithLifecycle()
-        var perAppEnabled by remember {
-            mutableStateOf(MmkvManager.decodeSettingsBool(AppConfig.PREF_PER_APP_PROXY, false))
+
+        LaunchedEffect(Unit) {
+            viewModel.events.collectLatest { event ->
+                when (event) {
+                    TikNetUiEvent.StartVpn -> startVpnOrService()
+                    is TikNetUiEvent.Toast -> {
+                        // temporarily reuse syncMessage for toast text on account/connect
+                        viewModel.ui.value.let {
+                            // no-op: toast messages also set error/sync in requestConnect
+                        }
+                    }
+                }
+            }
         }
 
         TikNetShell(
             state = state,
+            viewModel = viewModel,
             onToggleConnect = { toggleConnection() },
             onSelectServer = { guid ->
                 val wasConnected = state.phase == TikNetConnPhase.Connected
@@ -68,8 +76,9 @@ class TikNetMainActivity : HelperBaseComponentActivity() {
                     window.decorView.postDelayed({ startVpnOrService() }, 450)
                 }
             },
+            onSmartMode = { viewModel.enableSmartMode() },
+            onPingAll = { viewModel.pingAllServers() },
             onSync = { viewModel.syncSubscription() },
-            onRefreshUser = { viewModel.loadUser(silent = false) },
             onLogout = {
                 if (state.phase == TikNetConnPhase.Connected) {
                     LauncherManager.stopService(this)
@@ -78,22 +87,12 @@ class TikNetMainActivity : HelperBaseComponentActivity() {
                 startActivity(Intent(this, TikNetLoginActivity::class.java))
                 finish()
             },
-            filterContent = {
-                TikNetFilterTab(
-                    enabled = perAppEnabled,
-                    onEnabledChange = { enabled ->
-                        perAppEnabled = enabled
-                        MmkvManager.encodeSettings(AppConfig.PREF_PER_APP_PROXY, enabled)
-                        if (state.phase == TikNetConnPhase.Connected) {
-                            viewModel.markConnecting()
-                            LauncherManager.stopService(this)
-                            window.decorView.postDelayed({ startVpnOrService() }, 450)
-                        }
-                    },
-                    onOpenAdvanced = {
-                        startActivity(Intent(this, PerAppProxyActivity::class.java))
-                    },
-                )
+            onFilterChangedRestart = {
+                if (state.phase == TikNetConnPhase.Connected) {
+                    viewModel.markConnecting()
+                    LauncherManager.stopService(this)
+                    window.decorView.postDelayed({ startVpnOrService() }, 450)
+                }
             },
         )
     }
@@ -105,11 +104,7 @@ class TikNetMainActivity : HelperBaseComponentActivity() {
                 LauncherManager.stopService(this)
             }
             TikNetConnPhase.Disconnected -> {
-                if (!viewModel.ensureServerSelected()) {
-                    viewModel.syncSubscription()
-                    return
-                }
-                startVpnOrService()
+                viewModel.requestConnect()
             }
             else -> Unit
         }

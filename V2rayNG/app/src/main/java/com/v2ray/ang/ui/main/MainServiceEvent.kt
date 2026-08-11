@@ -10,4 +10,6 @@ sealed class MainServiceEvent {
     data object MeasureConfigSuccess : MainServiceEvent()
     data class MeasureConfigNotify(val progress: String) : MainServiceEvent()
     data class MeasureConfigFinish(val finishedCount: String?) : MainServiceEvent()
+    /** rateUp|rateDown|deltaUp|deltaDown */
+    data class TrafficUpdate(val content: String) : MainServiceEvent()
 }
