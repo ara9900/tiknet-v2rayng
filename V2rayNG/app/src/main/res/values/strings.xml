@@ -398,8 +398,8 @@
     <string name="connection_test_pending">Check connectivity</string>
     <string name="connection_test_testing">Testing…</string>
     <string name="connection_test_testing_count">Testing %d configs…</string>
-    <string name="connection_test_available">Success: Connection took %dms</string>
-    <string name="connection_test_error">Connection test failed: %s</string>
+    <string name="connection_test_available">تأخیر: %d میلی‌ثانیه</string>
+    <string name="connection_test_error">تست اتصال ناموفق: %s</string>
     <string name="connection_test_fail">Internet unavailable</string>
     <string name="connection_test_error_status_code">Error code: #%d</string>
     <string name="connection_connected">Connected. Tap to check connection.</string>

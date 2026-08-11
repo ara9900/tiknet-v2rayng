@@ -14,6 +14,7 @@ import com.v2ray.ang.AngApplication
 import com.v2ray.ang.core.LauncherManager
 import com.v2ray.ang.enums.PermissionType
 import com.v2ray.ang.handler.SettingsManager
+import com.v2ray.ang.tiknet.TikNetBootstrap
 import com.v2ray.ang.tiknet.TikNetPrefs
 import com.v2ray.ang.ui.base.HelperBaseComponentActivity
 import com.v2ray.ang.ui.compose.ThemeManager
@@ -39,6 +40,7 @@ class TikNetMainActivity : HelperBaseComponentActivity() {
             finish()
             return
         }
+        TikNetBootstrap.applyDefaults(this)
         ThemeManager.setThemeMode("2")
         super.onCreate(savedInstanceState)
         checkAndRequestPermission(PermissionType.POST_NOTIFICATIONS) {}
@@ -53,6 +55,11 @@ class TikNetMainActivity : HelperBaseComponentActivity() {
             viewModel.events.collectLatest { event ->
                 when (event) {
                     TikNetUiEvent.StartVpn -> startVpnOrService()
+                    TikNetUiEvent.RestartVpn -> {
+                        viewModel.markConnecting()
+                        LauncherManager.stopService(this@TikNetMainActivity)
+                        window.decorView.postDelayed({ startVpnOrService() }, 450)
+                    }
                     is TikNetUiEvent.Toast -> {
                         // temporarily reuse syncMessage for toast text on account/connect
                         viewModel.ui.value.let {

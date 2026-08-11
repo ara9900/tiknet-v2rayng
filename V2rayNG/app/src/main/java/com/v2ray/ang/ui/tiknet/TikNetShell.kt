@@ -1,5 +1,6 @@
 package com.v2ray.ang.ui.tiknet
 
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
@@ -41,6 +42,7 @@ import androidx.compose.material.icons.outlined.Apps
 import androidx.compose.material.icons.outlined.ArrowDownward
 import androidx.compose.material.icons.outlined.ArrowUpward
 import androidx.compose.material.icons.outlined.Campaign
+import androidx.compose.material.icons.outlined.Chat
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Dns
@@ -59,6 +61,7 @@ import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Route
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Shield
+import androidx.compose.material.icons.outlined.ShoppingCart
 import androidx.compose.material.icons.outlined.Speed
 import androidx.compose.material.icons.outlined.SwapVert
 import androidx.compose.material.icons.outlined.Sync
@@ -104,8 +107,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -117,6 +122,7 @@ import com.v2ray.ang.dto.AppInfo
 import com.v2ray.ang.tiknet.TikNetAnnouncement
 import com.v2ray.ang.tiknet.TikNetFaqItem
 import com.v2ray.ang.tiknet.TikNetJalali
+import com.v2ray.ang.tiknet.TikNetMessages
 import com.v2ray.ang.tiknet.TikNetNotificationItem
 import com.v2ray.ang.tiknet.TikNetUserInfo
 
@@ -184,6 +190,10 @@ fun TikNetShell(
                         state = state,
                         onToggleConnect = onToggleConnect,
                         onOpenServers = { showServerSheet = true },
+                        onOpenNotifications = {
+                            accountSheet = AccountSheet.Notifications
+                            viewModel.loadNotifications()
+                        },
                     )
                     TikNetTab.Details -> DetailsTab(state = state)
                     TikNetTab.Filter -> FilterTab(
@@ -210,6 +220,10 @@ fun TikNetShell(
                     )
                 }
             }
+        }
+
+        if (state.showSplash) {
+            TikNetLaunchSplash(onFinished = { viewModel.dismissSplash() })
         }
 
         if (showServerSheet) {
@@ -389,6 +403,7 @@ private fun ConnectTab(
     state: TikNetMainUiState,
     onToggleConnect: () -> Unit,
     onOpenServers: () -> Unit,
+    onOpenNotifications: () -> Unit,
 ) {
     val statusColor = statusColor(state)
     val statusLabel = statusLabel(state)
@@ -406,8 +421,42 @@ private fun ConnectTab(
         Box(
             Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 14.dp),
+                .padding(horizontal = 8.dp, vertical = 6.dp),
         ) {
+            // RTL: CenterEnd = physical left (بالا سمت چپ)
+            Box(
+                Modifier.align(Alignment.CenterEnd),
+                contentAlignment = Alignment.Center,
+            ) {
+                IconButton(onClick = onOpenNotifications) {
+                    Icon(
+                        Icons.Outlined.Notifications,
+                        contentDescription = "اعلان‌ها",
+                        tint = TikOnBg,
+                    )
+                }
+                if (state.unreadCount > 0) {
+                    Box(
+                        Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(top = 8.dp, end = 8.dp)
+                            .size(18.dp)
+                            .clip(CircleShape)
+                            .background(TikDanger),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            TikNetJalali.toPersianDigits(
+                                if (state.unreadCount > 99) "۹۹+" else TikNetJalali.toPersianDigits(state.unreadCount.toString()),
+                            ),
+                            color = Color.White,
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                        )
+                    }
+                }
+            }
             Text(
                 "اتصال امن",
                 color = TikOnBg,
@@ -419,7 +468,9 @@ private fun ConnectTab(
                 TikNetJalali.toPersianDigits(state.appVersion),
                 color = TikMuted,
                 fontSize = 12.sp,
-                modifier = Modifier.align(Alignment.CenterStart),
+                modifier = Modifier
+                    .align(Alignment.CenterStart)
+                    .padding(start = 8.dp),
             )
         }
 
@@ -921,22 +972,39 @@ private fun DetailsTab(state: TikNetMainUiState) {
             }
             if (state.currentDelayText.isNotBlank()) {
                 ThinDivider()
-                DetailRow(Icons.Outlined.Speed, "تأخیر هسته", state.currentDelayText)
+                DetailRow(
+                    Icons.Outlined.Speed,
+                    "تأخیر هسته",
+                    TikNetMessages.coreDelay(state.currentDelayText),
+                )
             }
         }
         Spacer(Modifier.height(16.dp))
 
         DetailCard(title = "آی‌پی خروجی") {
+            val (flag, ipText) = TikNetMessages.formatExitIp(
+                state.exitIpText.takeIf { it.isNotBlank() },
+            )
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Outlined.Public, contentDescription = null, tint = TikMuted, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(12.dp))
-                Text("آی‌پی خروجی", color = TikMuted, fontSize = 14.sp, modifier = Modifier.weight(1f))
                 Text(
-                    state.exitIpText.ifBlank { if (connected) "در حال دریافت…" else "—" },
-                    color = TikOnBg,
-                    fontWeight = FontWeight.SemiBold,
-                    fontSize = 14.sp,
+                    if (state.exitIpText.isBlank() && !connected) "🌐" else flag.ifBlank { "🌐" },
+                    fontSize = 28.sp,
                 )
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("آی‌پی خروجی", color = TikMuted, fontSize = 13.sp)
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        when {
+                            state.exitIpText.isBlank() && connected -> "در حال دریافت…"
+                            state.exitIpText.isBlank() -> "—"
+                            else -> ipText
+                        },
+                        color = TikOnBg,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 15.sp,
+                    )
+                }
             }
         }
         Spacer(Modifier.height(16.dp))
@@ -1019,17 +1087,21 @@ private fun DetailCard(title: String, content: @Composable () -> Unit) {
 
 @Composable
 private fun DetailRow(icon: ImageVector, label: String, value: String, valueColor: Color = TikOnBg) {
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Icon(icon, contentDescription = null, tint = TikMuted, modifier = Modifier.size(18.dp))
-        Spacer(Modifier.width(12.dp))
-        Text(label, color = TikMuted, fontSize = 14.sp, modifier = Modifier.weight(1f))
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(icon, contentDescription = null, tint = TikMuted, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(12.dp))
+            Text(label, color = TikMuted, fontSize = 13.sp)
+        }
+        Spacer(Modifier.height(6.dp))
         Text(
             value,
             color = valueColor,
             fontWeight = FontWeight.Medium,
             fontSize = 14.sp,
-            maxLines = 1,
+            maxLines = 4,
             overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.fillMaxWidth(),
         )
     }
 }
@@ -1094,87 +1166,86 @@ private fun FilterTab(
 
         if (state.filterLoading && state.filterApps.isEmpty()) {
             FilterLoadingView()
-            return
-        }
-
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp),
-        ) {
-            Row(
+        } else {
+            Column(
                 Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(TikSurface2)
-                    .padding(horizontal = 14.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
+                    .padding(horizontal = 20.dp),
             ) {
-                Column(Modifier.weight(1f)) {
-                    Text("فیلتر اپ (Split Tunnel)", color = TikOnBg, fontWeight = FontWeight.SemiBold)
-                    Spacer(Modifier.height(2.dp))
-                    Text(
-                        if (state.filterEnabled) {
-                            "فقط اپ‌های روشن‌شده از VPN استفاده می‌کنند."
-                        } else {
-                            "خاموش = همه اپ‌ها از VPN استفاده می‌کنند."
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(TikSurface2)
+                        .padding(horizontal = 14.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text("فیلتر اپ (Split Tunnel)", color = TikOnBg, fontWeight = FontWeight.SemiBold)
+                        Spacer(Modifier.height(2.dp))
+                        Text(
+                            if (state.filterEnabled) {
+                                "فقط اپ‌های روشن‌شده از VPN استفاده می‌کنند."
+                            } else {
+                                "خاموش = همه اپ‌ها از VPN استفاده می‌کنند."
+                            },
+                            color = TikMuted,
+                            fontSize = 12.sp,
+                        )
+                    }
+                    Switch(
+                        checked = state.filterEnabled,
+                        onCheckedChange = { enabled ->
+                            viewModel.setFilterEnabled(enabled)
+                            onFilterChangedRestart()
                         },
-                        color = TikMuted,
-                        fontSize = 12.sp,
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = Color.White,
+                            checkedTrackColor = TikPrimary,
+                            uncheckedThumbColor = Color.White,
+                            uncheckedTrackColor = TikMuted.copy(alpha = 0.4f),
+                        ),
                     )
                 }
-                Switch(
-                    checked = state.filterEnabled,
-                    onCheckedChange = { enabled ->
-                        viewModel.setFilterEnabled(enabled)
-                        onFilterChangedRestart()
-                    },
-                    colors = SwitchDefaults.colors(
-                        checkedThumbColor = Color.White,
-                        checkedTrackColor = TikPrimary,
-                        uncheckedThumbColor = Color.White,
-                        uncheckedTrackColor = TikMuted.copy(alpha = 0.4f),
-                    ),
+                Spacer(Modifier.height(12.dp))
+                SearchField(
+                    value = state.filterQuery,
+                    onValueChange = { viewModel.setFilterQuery(it) },
+                    hint = "جستجو بین اپ‌ها",
                 )
             }
-            Spacer(Modifier.height(12.dp))
-            SearchField(
-                value = state.filterQuery,
-                onValueChange = { viewModel.setFilterQuery(it) },
-                hint = "جستجو بین اپ‌ها",
-            )
-        }
 
-        val apps = remember(state.filterApps, state.filterQuery, state.filterSelected) {
-            viewModel.filteredApps()
-        }
-
-        LazyColumn(
-            contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier.fillMaxSize(),
-        ) {
-            items(apps, key = { it.packageName }) { app ->
-                AppFilterRow(
-                    app = app,
-                    checked = state.filterSelected.contains(app.packageName),
-                    enabled = state.filterEnabled,
-                    onToggle = {
-                        viewModel.toggleFilterApp(app.packageName)
-                        if (state.filterEnabled) onFilterChangedRestart()
-                    },
-                )
+            val apps = remember(state.filterApps, state.filterQuery, state.filterSelected) {
+                viewModel.filteredApps()
             }
-            if (apps.isEmpty() && !state.filterLoading) {
-                item {
-                    Text(
-                        "اپلیکی یافت نشد",
-                        color = TikMuted,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(32.dp),
-                        textAlign = TextAlign.Center,
+
+            LazyColumn(
+                contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxSize(),
+            ) {
+                items(apps, key = { it.packageName }) { app ->
+                    AppFilterRow(
+                        app = app,
+                        checked = state.filterSelected.contains(app.packageName),
+                        enabled = state.filterEnabled,
+                        onToggle = {
+                            viewModel.toggleFilterApp(app.packageName)
+                            if (state.filterEnabled) onFilterChangedRestart()
+                        },
                     )
+                }
+                if (apps.isEmpty() && !state.filterLoading) {
+                    item {
+                        Text(
+                            "اپلیکی یافت نشد",
+                            color = TikMuted,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(32.dp),
+                            textAlign = TextAlign.Center,
+                        )
+                    }
                 }
             }
         }
@@ -1201,7 +1272,11 @@ private fun FilterLoadingView() {
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Box(contentAlignment = Alignment.Center, modifier = Modifier.size(56.dp)) {
-            Canvas(Modifier.size(56.dp)) {
+            Canvas(
+                Modifier
+                    .size(56.dp)
+                    .graphicsLayer { rotationZ = angle },
+            ) {
                 drawArc(
                     brush = Brush.sweepGradient(
                         listOf(
@@ -1211,8 +1286,8 @@ private fun FilterLoadingView() {
                             TikPrimary,
                         ),
                     ),
-                    startAngle = angle,
-                    sweepAngle = 360f,
+                    startAngle = -90f,
+                    sweepAngle = 300f,
                     useCenter = false,
                     style = Stroke(width = 4.dp.toPx(), cap = StrokeCap.Round),
                 )
@@ -1508,6 +1583,52 @@ private fun AccountTab(
                     Icon(Icons.Outlined.Sync, contentDescription = null)
                     Spacer(Modifier.width(8.dp))
                     Text("بروزرسانی اشتراک")
+                }
+            }
+
+            val uriHandler = LocalUriHandler.current
+            val shopUrl = state.shopUrl
+            if (!shopUrl.isNullOrBlank()) {
+                Spacer(Modifier.height(12.dp))
+                Button(
+                    onClick = { runCatching { uriHandler.openUri(shopUrl) } },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(52.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = TikConnected,
+                        contentColor = Color.White,
+                    ),
+                ) {
+                    Icon(Icons.Outlined.ShoppingCart, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text(state.shopLabel?.takeIf { it.isNotBlank() } ?: "خرید و تمدید")
+                }
+            }
+            val tg = state.telegramSupport
+            if (!tg.isNullOrBlank()) {
+                Spacer(Modifier.height(12.dp))
+                OutlinedButton(
+                    onClick = {
+                        val url = when {
+                            tg.startsWith("http") -> tg
+                            tg.startsWith("tg:") -> tg
+                            tg.startsWith("@") -> "https://t.me/${tg.removePrefix("@")}"
+                            else -> "https://t.me/$tg"
+                        }
+                        runCatching { uriHandler.openUri(url) }
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    border = BorderStroke(1.dp, TikPrimary),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = TikPrimary),
+                ) {
+                    Icon(Icons.Outlined.Chat, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("پشتیبانی")
                 }
             }
 
@@ -1941,5 +2062,114 @@ private fun flagFromRemarks(remarks: String): String {
         "ژاپن" in remarks || "japan" in lower -> "🇯🇵"
         "سنگاپور" in remarks || "singapore" in lower -> "🇸🇬"
         else -> "🌐"
+    }
+}
+
+@Composable
+private fun TikNetLaunchSplash(onFinished: () -> Unit) {
+    val progress = remember { Animatable(0f) }
+    val infinite = rememberInfiniteTransition(label = "splash")
+    val pulse by infinite.animateFloat(
+        initialValue = 0.92f,
+        targetValue = 1.08f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(900, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "shieldPulse",
+    )
+    val ringAngle by infinite.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1600, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart,
+        ),
+        label = "ring",
+    )
+
+    LaunchedEffect(Unit) {
+        progress.animateTo(
+            targetValue = 1f,
+            animationSpec = tween(durationMillis = 2100, easing = LinearEasing),
+        )
+        onFinished()
+    }
+
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(TikBg)
+            .statusBarsPadding()
+            .navigationBarsPadding(),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .size(120.dp)
+                    .graphicsLayer {
+                        scaleX = pulse
+                        scaleY = pulse
+                    },
+            ) {
+                Canvas(
+                    Modifier
+                        .size(120.dp)
+                        .graphicsLayer { rotationZ = ringAngle },
+                ) {
+                    drawArc(
+                        color = TikPrimary.copy(alpha = 0.55f),
+                        startAngle = -90f,
+                        sweepAngle = 270f,
+                        useCenter = false,
+                        style = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round),
+                    )
+                }
+                Box(
+                    Modifier
+                        .size(88.dp)
+                        .clip(CircleShape)
+                        .background(
+                            Brush.radialGradient(
+                                listOf(TikPrimary.copy(alpha = 0.35f), TikSurface),
+                            ),
+                        ),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        Icons.Outlined.Shield,
+                        contentDescription = null,
+                        tint = TikPrimary,
+                        modifier = Modifier.size(48.dp),
+                    )
+                }
+            }
+            Spacer(Modifier.height(28.dp))
+            Text(
+                "TikNet",
+                color = TikOnBg,
+                fontSize = 32.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 1.sp,
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "مسیری مطمئن به دنیای اینترنت",
+                color = TikMuted,
+                fontSize = 13.sp,
+            )
+            Spacer(Modifier.height(36.dp))
+            LinearProgressIndicator(
+                progress = { progress.value },
+                modifier = Modifier
+                    .fillMaxWidth(0.45f)
+                    .height(4.dp)
+                    .clip(RoundedCornerShape(4.dp)),
+                color = TikPrimary,
+                trackColor = TikBorder,
+            )
+        }
     }
 }

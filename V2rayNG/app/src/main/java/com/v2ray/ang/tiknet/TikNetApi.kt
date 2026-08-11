@@ -29,6 +29,14 @@ data class TikNetUserInfo(
     @SerializedName("days_remaining") val daysRemaining: Int? = null,
     @SerializedName("traffic_used_bytes") val trafficUsedBytes: Long? = null,
     @SerializedName("traffic_limit_bytes") val trafficLimitBytes: Long? = null,
+    @SerializedName("shop_enabled") val shopEnabled: Boolean? = null,
+    @SerializedName("support_telegram") val supportTelegram: String? = null,
+)
+
+data class TikNetPublicConfig(
+    val shopEnabled: Boolean = false,
+    val shopUrl: String? = null,
+    val shopLabel: String? = null,
 )
 
 data class TikNetAppUpdateInfo(
@@ -104,6 +112,114 @@ object TikNetApi {
             .header("Accept", "application/json")
             .build()
         return executeJson(req, TikNetUserInfo::class.java)
+    }
+
+    /**
+     * GET /me with nested brand.support_telegram parsed via JsonParser when Gson nesting is awkward.
+     */
+    fun enrichMe(baseUrl: String, token: String): Pair<TikNetUserInfo, String?> {
+        val req = Request.Builder()
+            .url("${root(baseUrl)}/api/customer/me")
+            .get()
+            .header("Authorization", "Bearer $token")
+            .header("Accept", "application/json")
+            .build()
+        client.newCall(req).execute().use { resp ->
+            val text = resp.body?.string().orEmpty()
+            if (!resp.isSuccessful) {
+                val detail = runCatching {
+                    JsonParser.parseString(text).asJsonObject.get("detail")?.asString
+                }.getOrNull()
+                throw TikNetApiException(detail ?: "HTTP ${resp.code}", resp.code)
+            }
+            val rootEl = JsonParser.parseString(text).asJsonObject
+            val me = gson.fromJson(rootEl, TikNetUserInfo::class.java)
+                ?: throw TikNetApiException("Empty response")
+            val brandTg = rootEl.getAsJsonObject("brand")
+                ?.get("support_telegram")
+                ?.asString
+                ?.trim()
+                ?.takeIf { it.isNotEmpty() }
+            val topTg = rootEl.get("support_telegram")?.asString?.trim()?.takeIf { it.isNotEmpty() }
+            val supportTg = brandTg ?: topTg ?: me.supportTelegram
+            val shopEnabled = rootEl.get("shop_enabled")?.asBoolean ?: me.shopEnabled
+            val enriched = me.copy(
+                supportTelegram = supportTg,
+                shopEnabled = shopEnabled,
+            )
+            return enriched to supportTg
+        }
+    }
+
+    /** GET /api/customer/public-config — no auth (shop flags / buy-renew URL). */
+    fun getPublicConfig(baseUrl: String): TikNetPublicConfig {
+        return try {
+            val req = Request.Builder()
+                .url("${root(baseUrl)}/api/customer/public-config")
+                .get()
+                .header("Accept", "application/json")
+                .build()
+            client.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) return TikNetPublicConfig()
+                val text = resp.body?.string().orEmpty()
+                val rootEl = runCatching { JsonParser.parseString(text).asJsonObject }.getOrNull()
+                    ?: return TikNetPublicConfig()
+                val shop = rootEl.getAsJsonObject("shop")
+                    ?: rootEl.getAsJsonObject("buy_renew")
+                    ?: rootEl.getAsJsonObject("app_shop")
+
+                fun pickBool(vararg keys: String): Boolean? {
+                    for (k in keys) {
+                        val v = rootEl.get(k) ?: shop?.get(k)
+                        if (v != null && v.isJsonPrimitive && v.asJsonPrimitive.isBoolean) return v.asBoolean
+                    }
+                    return null
+                }
+
+                fun pickString(vararg keys: String): String? {
+                    for (k in keys) {
+                        val v = (rootEl.get(k) ?: shop?.get(k))?.asString?.trim()
+                        if (!v.isNullOrEmpty()) return v
+                    }
+                    return null
+                }
+
+                val enabled = pickBool(
+                    "telegram_shop_enabled",
+                    "shop_enabled",
+                    "app_shop_enabled",
+                    "buy_enabled",
+                    "buy_renew_enabled",
+                    "show_shop_button",
+                    "show_buy_button",
+                ) ?: shop?.get("enabled")?.asBoolean ?: false
+
+                val url = pickString(
+                    "telegram_shop_url",
+                    "shop_url",
+                    "app_shop_url",
+                    "buy_url",
+                    "buy_renew_url",
+                    "renew_url",
+                    "telegram_bot_url",
+                ) ?: pickString("url", "link")
+
+                val label = pickString(
+                    "telegram_shop_label",
+                    "shop_label",
+                    "buy_label",
+                    "buy_renew_label",
+                ) ?: pickString("label", "title")
+
+                TikNetPublicConfig(
+                    shopEnabled = enabled,
+                    shopUrl = url,
+                    shopLabel = label,
+                )
+            }
+        } catch (_: Exception) {
+            TikNetPublicConfig()
+        }
     }
 
     fun getSubscriptionConfigBytes(baseUrl: String, token: String): ByteArray {

@@ -19,7 +19,7 @@
             android:layout_height="45dp"
             android:importantForAccessibility="no"
             android:padding="@dimen/padding_spacing_dp16"
-            android:src="@drawable/ic_stat_name" />
+            android:src="@drawable/ic_stat_tiknet" />
     </LinearLayout>
 
     <TextView
