@@ -5,32 +5,36 @@ import java.util.Locale
 import java.util.TimeZone
 
 /**
- * Lightweight Jalali (Shamsi) formatter with Persian digits — mirrors Flutter formatShamsiDate.
+ * Jalali date helpers. Digits stay Latin (0-9) for readability in the TikNet UI.
  */
 object TikNetJalali {
     private val persianDigits = charArrayOf('۰', '۱', '۲', '۳', '۴', '۵', '۶', '۷', '۸', '۹')
 
-    fun toPersianDigits(s: String): String = buildString {
+    /** Kept for call-site compatibility — returns Latin digits (readable). */
+    fun toPersianDigits(s: String): String = toLatinDigits(s)
+
+    fun toLatinDigits(s: String): String = buildString {
         for (c in s) {
-            append(if (c in '0'..'9') persianDigits[c - '0'] else c)
+            val idx = persianDigits.indexOf(c)
+            append(if (idx >= 0) ('0' + idx) else c)
         }
     }
 
     /** Accepts ISO-8601, yyyy-MM-dd, or already-Shamsi-looking strings. */
     fun formatExpire(raw: String?): String {
         if (raw.isNullOrBlank()) return "—"
-        val trimmed = raw.trim()
+        val trimmed = toLatinDigits(raw.trim())
         // Already looks like jalali yyyy/mm/dd
         if (trimmed.matches(Regex("""\d{4}/\d{1,2}/\d{1,2}"""))) {
-            return toPersianDigits(trimmed)
+            return trimmed
         }
-        val millis = parseToMillis(trimmed) ?: return toPersianDigits(trimmed)
+        val millis = parseToMillis(trimmed) ?: return trimmed
         val cal = Calendar.getInstance(TimeZone.getTimeZone("UTC")).apply { timeInMillis = millis }
         val gY = cal.get(Calendar.YEAR)
         val gM = cal.get(Calendar.MONTH) + 1
         val gD = cal.get(Calendar.DAY_OF_MONTH)
         val (jy, jm, jd) = gregorianToJalali(gY, gM, gD)
-        return toPersianDigits(String.format(Locale.US, "%04d/%02d/%02d", jy, jm, jd))
+        return String.format(Locale.US, "%04d/%02d/%02d", jy, jm, jd)
     }
 
     fun formatTraffic(used: Long?, limit: Long?): String {
@@ -88,7 +92,7 @@ object TikNetJalali {
         val s = sec % 60
         val raw = if (h > 0) String.format(Locale.US, "%d:%02d:%02d", h, m, s)
         else String.format(Locale.US, "%d:%02d", m, s)
-        return toPersianDigits(raw)
+        return raw
     }
 
     private fun parseToMillis(raw: String): Long? {

@@ -110,9 +110,12 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.LocalTextStyle
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.intl.Locale
+import androidx.compose.ui.text.intl.LocaleList
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.LayoutDirection
@@ -168,7 +171,12 @@ fun TikNetShell(
         viewModel.clearSyncMessage()
     }
 
-    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
+    // Force Latin digits (0-9): Persian locale fonts otherwise reshape ASCII digits to ۰-۹ and they look tiny.
+    val latinDigitStyle = LocalTextStyle.current.copy(localeList = LocaleList(Locale("en")))
+    CompositionLocalProvider(
+        LocalLayoutDirection provides LayoutDirection.Rtl,
+        LocalTextStyle provides latinDigitStyle,
+    ) {
         Scaffold(
             modifier = Modifier
                 .fillMaxSize()
@@ -446,11 +454,11 @@ private fun ConnectTab(
                         contentAlignment = Alignment.Center,
                     ) {
                         Text(
-                            TikNetJalali.toPersianDigits(
-                                if (state.unreadCount > 99) "۹۹+" else TikNetJalali.toPersianDigits(state.unreadCount.toString()),
+                            TikNetJalali.toLatinDigits(
+                                if (state.unreadCount > 99) "99+" else state.unreadCount.toString(),
                             ),
                             color = Color.White,
-                            fontSize = 9.sp,
+                            fontSize = 11.sp,
                             fontWeight = FontWeight.Bold,
                             maxLines = 1,
                         )
@@ -915,7 +923,7 @@ private fun PingChip(ms: Long) {
     ) {
         Icon(Icons.Outlined.Speed, contentDescription = null, tint = color, modifier = Modifier.size(12.dp))
         Spacer(Modifier.width(4.dp))
-        Text(label, color = color, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+        Text(label, color = color, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
     }
 }
 
@@ -1098,7 +1106,7 @@ private fun DetailRow(icon: ImageVector, label: String, value: String, valueColo
             value,
             color = valueColor,
             fontWeight = FontWeight.Medium,
-            fontSize = 14.sp,
+            fontSize = 15.sp,
             maxLines = 4,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.fillMaxWidth(),
@@ -1126,7 +1134,7 @@ private fun MetricTile(
             Text(label, color = TikMuted, fontSize = 12.sp)
         }
         Spacer(Modifier.height(8.dp))
-        Text(value, color = TikOnBg, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+        Text(value, color = TikOnBg, fontWeight = FontWeight.Bold, fontSize = 18.sp)
     }
 }
 
@@ -1717,7 +1725,7 @@ private fun StatTile(modifier: Modifier, icon: ImageVector, label: String, value
             value,
             color = TikOnBg,
             fontWeight = FontWeight.SemiBold,
-            fontSize = 14.sp,
+            fontSize = 15.sp,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
         )
@@ -1746,7 +1754,7 @@ private fun TrafficCard(user: TikNetUserInfo?) {
             TikNetJalali.toPersianDigits(label),
             color = TikOnBg,
             fontWeight = FontWeight.SemiBold,
-            fontSize = 14.sp,
+            fontSize = 16.sp,
         )
         if ((limit ?: 0) > 0) {
             Spacer(Modifier.height(10.dp))
