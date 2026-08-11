@@ -3,7 +3,7 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:fillViewport="true"
-    android:background="#0B1220">
+    android:background="#0D0D0D">
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -11,47 +11,63 @@
         android:orientation="vertical"
         android:padding="24dp">
 
+        <ImageView
+            android:layout_width="56dp"
+            android:layout_height="56dp"
+            android:src="@drawable/tiknet_shield"
+            android:contentDescription="@string/tiknet_brand" />
+
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
             android:text="@string/tiknet_account_title"
-            android:textColor="#FFFFFF"
+            android:textColor="#E8E8E8"
             android:textSize="24sp"
             android:textStyle="bold" />
 
-        <TextView
-            android:id="@+id/tiknet_account_info"
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="16dp"
-            android:textColor="#CBD5E1"
-            android:textSize="14sp"
-            android:lineSpacingExtra="4dp" />
+            android:orientation="vertical"
+            android:background="@drawable/tiknet_glass_card"
+            android:padding="16dp">
+
+            <TextView
+                android:id="@+id/tiknet_account_info"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textColor="#CBD5E1"
+                android:textSize="14sp"
+                android:lineSpacingExtra="4dp" />
+        </LinearLayout>
 
         <Button
             android:id="@+id/tiknet_sync_btn"
             android:layout_width="match_parent"
             android:layout_height="48dp"
             android:layout_marginTop="24dp"
-            android:backgroundTint="#2563EB"
+            android:background="@drawable/tiknet_primary_btn"
             android:text="@string/tiknet_sync_btn"
-            android:textColor="#FFFFFF" />
+            android:textColor="#FFFFFF"
+            android:textStyle="bold" />
 
         <Button
             android:id="@+id/tiknet_catalog_btn"
             android:layout_width="match_parent"
             android:layout_height="48dp"
             android:layout_marginTop="10dp"
-            android:backgroundTint="#1E293B"
+            android:background="@drawable/tiknet_glass_card"
             android:text="@string/tiknet_catalog_btn"
-            android:textColor="#FFFFFF" />
+            android:textColor="#E8E8E8" />
 
         <Button
             android:id="@+id/tiknet_logout_btn"
             android:layout_width="match_parent"
             android:layout_height="48dp"
             android:layout_marginTop="10dp"
-            android:backgroundTint="#7F1D1D"
+            android:background="@drawable/tiknet_danger_btn"
             android:text="@string/tiknet_logout_btn"
             android:textColor="#FFFFFF" />
 
@@ -61,6 +77,7 @@
             android:layout_height="wrap_content"
             android:layout_gravity="center_horizontal"
             android:layout_marginTop="16dp"
+            android:indeterminateTint="#6366F1"
             android:visibility="gone" />
 
         <TextView
@@ -68,7 +85,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="12dp"
-            android:textColor="#94A3B8"
+            android:textColor="#9E9E9E"
             android:textSize="13sp" />
     </LinearLayout>
 </ScrollView>

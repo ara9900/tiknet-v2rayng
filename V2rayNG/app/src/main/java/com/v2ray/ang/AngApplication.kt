@@ -8,6 +8,7 @@ import androidx.work.WorkManager
 import com.tencent.mmkv.MMKV
 import com.v2ray.ang.AppConfig.ANG_PACKAGE
 import com.v2ray.ang.handler.AppLocaleManager
+import com.v2ray.ang.handler.MmkvManager
 import com.v2ray.ang.handler.SettingsManager
 import com.v2ray.ang.ui.compose.ThemeManager
 
@@ -45,7 +46,11 @@ class AngApplication : Application() {
         // Ensure critical preference defaults are present in MMKV early
         SettingsManager.initApp(this)
 
-        // Initialize theme state from MMKV
-        ThemeManager.refresh()
+        // TikNet: default to dark theme (matches Flutter TikNet look)
+        if (MmkvManager.decodeSettingsString(AppConfig.PREF_UI_MODE_NIGHT).isNullOrBlank()) {
+            ThemeManager.setThemeMode("2")
+        } else {
+            ThemeManager.refresh()
+        }
     }
 }
