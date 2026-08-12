@@ -1,12 +1,6 @@
 package com.v2ray.ang.ui.tiknet
 
 import android.app.Application
-import android.content.Context
-import android.content.Intent
-import android.net.ConnectivityManager
-import android.net.NetworkCapabilities
-import android.os.PowerManager
-import android.provider.Settings
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -23,6 +17,8 @@ import com.v2ray.ang.helper.MessageHelper
 import com.v2ray.ang.tiknet.TikNetAnnouncement
 import com.v2ray.ang.tiknet.TikNetApi
 import com.v2ray.ang.tiknet.TikNetBootstrap
+import com.v2ray.ang.tiknet.TikNetDiagItem
+import com.v2ray.ang.tiknet.TikNetDiagnostics
 import com.v2ray.ang.tiknet.TikNetFaqItem
 import com.v2ray.ang.tiknet.TikNetNotificationItem
 import com.v2ray.ang.tiknet.TikNetPrefs
@@ -44,9 +40,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.net.HttpURLConnection
-import java.net.InetAddress
-import java.net.URL
+import com.v2ray.ang.core.CoreServiceManager
 
 enum class TikNetConnPhase {
     Disconnected,
@@ -60,13 +54,6 @@ data class TikNetServerItem(
     val remarks: String,
     val protocolLabel: String,
     val pingMs: Long?,
-)
-
-data class TikNetDiagItem(
-    val title: String,
-    val detail: String,
-    val ok: Boolean,
-    val settingsAction: String? = null,
 )
 
 data class TikNetMainUiState(
@@ -104,6 +91,7 @@ data class TikNetMainUiState(
     val faqLoading: Boolean = false,
     val diagnostics: List<TikNetDiagItem> = emptyList(),
     val diagnosticsLoading: Boolean = false,
+    val diagnosticsFixing: Boolean = false,
     val unreadCount: Int = 0,
     val shopUrl: String? = null,
     val shopLabel: String? = null,
@@ -687,25 +675,133 @@ class TikNetMainViewModel(
 
     fun runDiagnostics() {
         viewModelScope.launch {
-            _ui.update { it.copy(diagnosticsLoading = true, diagnostics = emptyList()) }
-            val items = withContext(Dispatchers.IO) { collectDiagnostics(getApplication()) }
+            _ui.update { it.copy(diagnosticsLoading = true) }
+            val vpnActive = isTikNetVpnActive()
+            val items = withContext(Dispatchers.IO) {
+                TikNetDiagnostics.collect(getApplication(), vpnActive)
+            }
             _ui.update { it.copy(diagnostics = items, diagnosticsLoading = false) }
         }
     }
 
-    fun openSettingsTarget(action: String?) {
-        val ctx = getApplication<Application>()
-        val intent = when (action) {
-            "date" -> Intent(Settings.ACTION_DATE_SETTINGS)
-            "vpn" -> Intent("android.net.vpn.SETTINGS")
-            "wireless" -> Intent(Settings.ACTION_WIRELESS_SETTINGS)
-            "airplane" -> Intent(Settings.ACTION_AIRPLANE_MODE_SETTINGS)
-            "battery" -> Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
-            "private_dns" -> Intent(Settings.ACTION_WIRELESS_SETTINGS)
-            else -> Intent(Settings.ACTION_SETTINGS)
+    fun autoFixDiagnostics() {
+        viewModelScope.launch {
+            _ui.update { it.copy(diagnosticsFixing = true) }
+            val current = _ui.value.diagnostics.ifEmpty {
+                withContext(Dispatchers.IO) {
+                    TikNetDiagnostics.collect(getApplication(), isTikNetVpnActive())
+                }
+            }
+
+            val messages = mutableListOf<String>()
+            val failOrWarn = current.filter {
+                it.status == com.v2ray.ang.tiknet.TikNetDiagStatus.Fail ||
+                    it.status == com.v2ray.ang.tiknet.TikNetDiagStatus.Warn
+            }
+
+            // Battery exemption (system dialog)
+            current.firstOrNull { it.id == "battery" && it.autoFix == "battery" }?.let {
+                messages += TikNetDiagnostics.autoFixOne(
+                    getApplication(), it,
+                    onRestartVpn = {},
+                    onSync = {},
+                )
+            }
+
+            // Routing / geo
+            withContext(Dispatchers.IO) {
+                runCatching {
+                    TikNetBootstrap.applyDefaults(getApplication())
+                    TikNetBootstrap.refreshGeoAssets(getApplication())
+                    messages += "مسیریابی / geo بررسی شد"
+                }
+            }
+
+            // Sync subscription when connectivity looks broken
+            if (failOrWarn.any { it.id in setOf("http", "dns", "network") }) {
+                withContext(Dispatchers.IO) {
+                    runCatching {
+                        TikNetSync.syncPersonalSubscription(getApplication())
+                        messages += "همگام‌سازی اشتراک انجام شد"
+                        withContext(Dispatchers.Main) { refreshServers() }
+                    }
+                }
+            }
+
+            // Restart / start VPN when needed
+            if (failOrWarn.any { it.id in setOf("http", "dns", "network", "core") } ||
+                current.any { it.autoFix == "restart_vpn" }
+            ) {
+                if (_ui.value.phase == TikNetConnPhase.Connected) {
+                    _events.tryEmit(TikNetUiEvent.RestartVpn)
+                    messages += "اتصال VPN راه‌اندازی مجدد شد"
+                } else {
+                    _events.tryEmit(TikNetUiEvent.StartVpn)
+                    messages += "اتصال VPN شروع شد"
+                }
+            }
+
+            // Open first settings page that needs manual change
+            val manual = failOrWarn.firstOrNull {
+                it.id in setOf("airplane", "auto_time", "private_dns", "always_on")
+            }
+            if (manual != null) {
+                TikNetDiagnostics.openSettings(getApplication(), manual.settingsAction)
+                messages += "تنظیمات «${manual.title}» باز شد"
+            }
+
+            if (messages.isEmpty()) messages += "مورد قابل رفع خودکار نبود"
+
+            delay(1500)
+            val items = withContext(Dispatchers.IO) {
+                TikNetDiagnostics.collect(getApplication(), isTikNetVpnActive())
+            }
+            _ui.update {
+                it.copy(
+                    diagnostics = items,
+                    diagnosticsFixing = false,
+                    syncMessage = messages.joinToString(" · "),
+                )
+            }
         }
-        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        runCatching { ctx.startActivity(intent) }
+    }
+
+    fun autoFixDiagItem(item: TikNetDiagItem) {
+        viewModelScope.launch {
+            _ui.update { it.copy(diagnosticsFixing = true) }
+            val msg = TikNetDiagnostics.autoFixOne(
+                ctx = getApplication(),
+                item = item,
+                onRestartVpn = {
+                    if (_ui.value.phase == TikNetConnPhase.Connected) {
+                        _events.tryEmit(TikNetUiEvent.RestartVpn)
+                    } else {
+                        _events.tryEmit(TikNetUiEvent.StartVpn)
+                    }
+                },
+                onSync = { syncSubscription() },
+            )
+            delay(900)
+            val items = withContext(Dispatchers.IO) {
+                TikNetDiagnostics.collect(getApplication(), isTikNetVpnActive())
+            }
+            _ui.update {
+                it.copy(
+                    diagnostics = items,
+                    diagnosticsFixing = false,
+                    syncMessage = msg,
+                )
+            }
+        }
+    }
+
+    fun openSettingsTarget(action: String?) {
+        TikNetDiagnostics.openSettings(getApplication(), action)
+    }
+
+    private fun isTikNetVpnActive(): Boolean {
+        return _ui.value.phase == TikNetConnPhase.Connected ||
+            runCatching { CoreServiceManager.isRunning() }.getOrDefault(false)
     }
 
     fun logout() {
@@ -728,138 +824,6 @@ class TikNetMainViewModel(
             val net = cfg.network?.takeIf { it.isNotBlank() }
             val sec = cfg.security?.takeIf { it.isNotBlank() }
             return listOfNotNull(type, net, sec).joinToString(" / ")
-        }
-
-        private fun collectDiagnostics(ctx: Context): List<TikNetDiagItem> {
-            val list = mutableListOf<TikNetDiagItem>()
-            val cm = ctx.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-            val net = cm.activeNetwork
-            val caps = net?.let { cm.getNetworkCapabilities(it) }
-
-            val hasInternet = caps?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
-            val validated = caps?.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) == true
-            val wifi = caps?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true
-            val cell = caps?.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) == true
-            val transportLabel = when {
-                wifi -> "وای‌فای"
-                cell -> "داده موبایل"
-                caps == null -> "بدون شبکه"
-                else -> "سایر"
-            }
-            list += TikNetDiagItem(
-                "نوع شبکه",
-                transportLabel,
-                hasInternet,
-                "wireless",
-            )
-            list += TikNetDiagItem(
-                "شبکه فعال",
-                if (hasInternet) "اتصال اینترنت برقرار است" else "اینترنت در دسترس نیست",
-                hasInternet,
-                "wireless",
-            )
-            list += TikNetDiagItem(
-                "اعتبارسنجی اتصال",
-                if (validated) "سیستم اتصال را معتبر می‌داند" else "اتصال معتبرسازی نشده",
-                validated || !hasInternet,
-                "wireless",
-            )
-
-            val airplane = Settings.Global.getInt(ctx.contentResolver, Settings.Global.AIRPLANE_MODE_ON, 0) == 1
-            list += TikNetDiagItem(
-                "حالت هواپیما",
-                if (airplane) "روشن است — خاموشش کنید" else "خاموش",
-                !airplane,
-                "airplane",
-            )
-
-            val vpn = caps?.hasTransport(NetworkCapabilities.TRANSPORT_VPN) == true
-            list += TikNetDiagItem(
-                "VPN فعال",
-                if (vpn) "یک VPN (احتمالاً همین اپ یا دیگری) فعال است" else "VPN فعالی دیده نمی‌شود",
-                true,
-                "vpn",
-            )
-
-            val privateDnsMode = runCatching {
-                Settings.Global.getString(ctx.contentResolver, "private_dns_mode")
-            }.getOrNull().orEmpty()
-            val privateDnsHost = runCatching {
-                Settings.Global.getString(ctx.contentResolver, "private_dns_specifier")
-            }.getOrNull().orEmpty()
-            if (privateDnsMode.isNotBlank()) {
-                val dnsDetail = when (privateDnsMode.lowercase()) {
-                    "off" -> "خاموش"
-                    "opportunistic" -> "خودکار (opportunistic)"
-                    "hostname" -> "خصوصی: ${privateDnsHost.ifBlank { "—" }}"
-                    else -> privateDnsMode
-                }
-                list += TikNetDiagItem(
-                    "DNS خصوصی",
-                    dnsDetail,
-                    privateDnsMode.lowercase() != "hostname" || privateDnsHost.isNotBlank(),
-                    "private_dns",
-                )
-            }
-
-            val pm = ctx.getSystemService(Context.POWER_SERVICE) as? PowerManager
-            val ignoringBattery = pm?.isIgnoringBatteryOptimizations(ctx.packageName) == true
-            list += TikNetDiagItem(
-                "بهینه‌سازی باتری",
-                if (ignoringBattery) {
-                    "محدودیت باتری برای TikNet برداشته شده"
-                } else {
-                    "ممکن است سیستم اتصال پس‌زمینه را محدود کند — در تنظیمات بررسی کنید"
-                },
-                ignoringBattery,
-                "battery",
-            )
-
-            val hosts = listOf("www.gstatic.com", "dns.google", "one.one.one.one", "cloudflare.com")
-            val dnsResults = hosts.map { host ->
-                host to runCatching {
-                    InetAddress.getByName(host)
-                    true
-                }.getOrDefault(false)
-            }
-            val dnsOkCount = dnsResults.count { it.second }
-            list += TikNetDiagItem(
-                "DNS (چند میزبان)",
-                if (dnsOkCount == hosts.size) {
-                    "رزولوشن همه میزبان‌ها موفق"
-                } else {
-                    "موفق: $dnsOkCount از ${hosts.size} — ${dnsResults.filter { !it.second }.joinToString { it.first }}"
-                },
-                dnsOkCount > 0,
-                "wireless",
-            )
-
-            val httpOk = runCatching {
-                val c = (URL("https://www.gstatic.com/generate_204").openConnection() as HttpURLConnection)
-                c.connectTimeout = 5000
-                c.readTimeout = 5000
-                c.instanceFollowRedirects = false
-                c.requestMethod = "GET"
-                c.connect()
-                val code = c.responseCode
-                c.disconnect()
-                code == 204 || code in 200..399
-            }.getOrDefault(false)
-            list += TikNetDiagItem(
-                "HTTP 204",
-                if (httpOk) "پاسخ موفق از generate_204" else "عدم دسترسی به generate_204",
-                httpOk,
-                "wireless",
-            )
-
-            val autoTime = Settings.Global.getInt(ctx.contentResolver, Settings.Global.AUTO_TIME, 0) == 1
-            list += TikNetDiagItem(
-                "زمان خودکار",
-                if (autoTime) "فعال" else "غیرفعال — ممکن است TLS مشکل داشته باشد",
-                autoTime,
-                "date",
-            )
-            return list
         }
 
         class Factory(

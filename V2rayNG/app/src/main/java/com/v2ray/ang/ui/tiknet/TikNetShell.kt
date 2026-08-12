@@ -123,6 +123,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.v2ray.ang.dto.AppInfo
 import com.v2ray.ang.tiknet.TikNetAnnouncement
+import com.v2ray.ang.tiknet.TikNetDiagItem
+import com.v2ray.ang.tiknet.TikNetDiagStatus
 import com.v2ray.ang.tiknet.TikNetFaqItem
 import com.v2ray.ang.tiknet.TikNetJalali
 import com.v2ray.ang.tiknet.TikNetMessages
@@ -310,7 +312,10 @@ fun TikNetShell(
                     DiagnosticsSheet(
                         items = state.diagnostics,
                         loading = state.diagnosticsLoading,
+                        fixing = state.diagnosticsFixing,
                         onRetry = { viewModel.runDiagnostics() },
+                        onAutoFixAll = { viewModel.autoFixDiagnostics() },
+                        onAutoFixItem = { viewModel.autoFixDiagItem(it) },
                         onOpenSettings = { viewModel.openSettingsTarget(it) },
                         onClose = { accountSheet = AccountSheet.None },
                     )
@@ -1988,14 +1993,18 @@ private fun FaqSheet(
 private fun DiagnosticsSheet(
     items: List<TikNetDiagItem>,
     loading: Boolean,
+    fixing: Boolean,
     onRetry: () -> Unit,
+    onAutoFixAll: () -> Unit,
+    onAutoFixItem: (TikNetDiagItem) -> Unit,
     onOpenSettings: (String?) -> Unit,
     onClose: () -> Unit,
 ) {
+    val busy = loading || fixing
     Column(
         Modifier
             .fillMaxWidth()
-            .fillMaxHeight(0.8f)
+            .fillMaxHeight(0.88f)
             .padding(bottom = 16.dp),
     ) {
         Row(
@@ -2004,17 +2013,53 @@ private fun DiagnosticsSheet(
                 .padding(horizontal = 16.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text("عیب‌یابی اینترنت گوشی", color = TikOnBg, fontWeight = FontWeight.Bold, fontSize = 18.sp, modifier = Modifier.weight(1f))
-            IconButton(onClick = onRetry, enabled = !loading) {
+            Text(
+                "عیب‌یابی اینترنت گوشی",
+                color = TikOnBg,
+                fontWeight = FontWeight.Bold,
+                fontSize = 18.sp,
+                modifier = Modifier.weight(1f),
+            )
+            IconButton(onClick = onRetry, enabled = !busy) {
                 Icon(Icons.Outlined.Refresh, contentDescription = "بررسی مجدد", tint = TikOnBg)
             }
             IconButton(onClick = onClose) {
                 Icon(Icons.Outlined.Close, contentDescription = "بستن", tint = TikMuted)
             }
         }
+        Text(
+            "مواردی که معمولاً اینترنت یا VPN را خراب می‌کنند بررسی می‌شوند.",
+            color = TikMuted,
+            fontSize = 13.sp,
+            modifier = Modifier.padding(horizontal = 16.dp),
+        )
+        Spacer(Modifier.height(10.dp))
+        Button(
+            onClick = onAutoFixAll,
+            enabled = !busy && items.isNotEmpty(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = TikPrimary, contentColor = Color.White),
+            shape = RoundedCornerShape(12.dp),
+        ) {
+            if (fixing) {
+                CircularProgressIndicator(
+                    color = Color.White,
+                    modifier = Modifier.size(18.dp),
+                )
+                Spacer(Modifier.width(10.dp))
+                Text("در حال رفع خودکار…")
+            } else {
+                Icon(Icons.Outlined.Troubleshoot, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("رفع خودکار مشکلات")
+            }
+        }
+        Spacer(Modifier.height(8.dp))
         HorizontalDivider(color = TikBorder)
         when {
-            loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            loading && items.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     CircularProgressIndicator(color = TikPrimary)
                     Spacer(Modifier.height(12.dp))
@@ -2025,28 +2070,60 @@ private fun DiagnosticsSheet(
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                items(items, key = { it.title }) { item ->
-                    val color = if (item.ok) TikConnected else TikDanger
-                    Row(
+                items(items, key = { it.id }) { item ->
+                    val color = when (item.status) {
+                        TikNetDiagStatus.Ok -> TikConnected
+                        TikNetDiagStatus.Fail -> TikDanger
+                        TikNetDiagStatus.Warn -> TikOrange
+                        TikNetDiagStatus.Info -> TikMuted
+                    }
+                    val icon = when (item.status) {
+                        TikNetDiagStatus.Ok -> Icons.Outlined.CheckCircle
+                        TikNetDiagStatus.Fail -> Icons.Outlined.ErrorOutline
+                        TikNetDiagStatus.Warn -> Icons.Outlined.WarningAmber
+                        TikNetDiagStatus.Info -> Icons.Outlined.Info
+                    }
+                    Column(
                         Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(12.dp))
                             .background(TikSurface2)
                             .border(1.dp, color.copy(alpha = 0.35f), RoundedCornerShape(12.dp))
-                            .clickable { onOpenSettings(item.settingsAction) }
                             .padding(14.dp),
-                        verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Icon(
-                            if (item.ok) Icons.Outlined.CheckCircle else Icons.Outlined.WarningAmber,
-                            contentDescription = null,
-                            tint = color,
-                        )
-                        Spacer(Modifier.width(12.dp))
-                        Column(Modifier.weight(1f)) {
-                            Text(item.title, color = TikOnBg, fontWeight = FontWeight.SemiBold)
-                            Spacer(Modifier.height(2.dp))
-                            Text(item.detail, color = TikMuted, fontSize = 13.sp)
+                        Row(verticalAlignment = Alignment.Top) {
+                            Icon(icon, contentDescription = null, tint = color)
+                            Spacer(Modifier.width(12.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(item.title, color = TikOnBg, fontWeight = FontWeight.SemiBold)
+                                Spacer(Modifier.height(2.dp))
+                                Text(item.detail, color = TikMuted, fontSize = 13.sp, lineHeight = 18.sp)
+                            }
+                        }
+                        if (item.settingsAction != null || item.autoFix != null) {
+                            Spacer(Modifier.height(10.dp))
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                if (item.autoFix != null &&
+                                    (item.status == TikNetDiagStatus.Fail || item.status == TikNetDiagStatus.Warn)
+                                ) {
+                                    TextButton(
+                                        onClick = { onAutoFixItem(item) },
+                                        enabled = !busy,
+                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                                    ) {
+                                        Text("رفع خودکار", color = TikPrimary, fontSize = 13.sp)
+                                    }
+                                }
+                                if (item.settingsAction != null) {
+                                    TextButton(
+                                        onClick = { onOpenSettings(item.settingsAction) },
+                                        enabled = !busy,
+                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                                    ) {
+                                        Text("باز کردن تنظیمات", color = TikMuted, fontSize = 13.sp)
+                                    }
+                                }
+                            }
                         }
                     }
                 }
