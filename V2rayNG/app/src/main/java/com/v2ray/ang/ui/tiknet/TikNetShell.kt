@@ -761,11 +761,12 @@ private fun ConnectPowerButton(
             ),
             label = "scale",
         )
-        ConnectPowerButtonBody(color, connected, pulse, scale, onClick)
+        ConnectPowerButtonBody(color, connected, busy = true, pulse, scale, onClick)
     } else {
         ConnectPowerButtonBody(
             color = color,
             connected = connected,
+            busy = false,
             pulse = if (connected) 0.45f else 0.35f,
             scale = 1f,
             onClick = onClick,
@@ -777,6 +778,7 @@ private fun ConnectPowerButton(
 private fun ConnectPowerButtonBody(
     color: Color,
     connected: Boolean,
+    busy: Boolean,
     pulse: Float,
     scale: Float,
     onClick: () -> Unit,
