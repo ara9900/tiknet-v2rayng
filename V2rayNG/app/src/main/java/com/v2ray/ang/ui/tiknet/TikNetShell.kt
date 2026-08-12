@@ -110,8 +110,11 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.intl.Locale
@@ -121,7 +124,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
+import coil.request.ImageRequest
+import com.v2ray.ang.R
 import com.v2ray.ang.dto.AppInfo
+import com.v2ray.ang.util.AppIconFetcher
 import com.v2ray.ang.tiknet.TikNetAnnouncement
 import com.v2ray.ang.tiknet.TikNetDiagItem
 import com.v2ray.ang.tiknet.TikNetDiagStatus
@@ -1478,6 +1485,13 @@ private fun AppFilterRow(
     enabled: Boolean,
     onToggle: () -> Unit,
 ) {
+    val context = LocalContext.current
+    val iconRequest = remember(app.packageName) {
+        ImageRequest.Builder(context)
+            .data("appicon:${app.packageName}")
+            .fetcherFactory(AppIconFetcher.Factory(context))
+            .build()
+    }
     Row(
         Modifier
             .fillMaxWidth()
@@ -1487,19 +1501,16 @@ private fun AppFilterRow(
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(
-            Modifier
+        AsyncImage(
+            model = iconRequest,
+            contentDescription = app.appName,
+            modifier = Modifier
                 .size(40.dp)
-                .clip(CircleShape)
-                .background(TikPrimary.copy(alpha = 0.15f)),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(
-                app.appName.take(1).ifEmpty { "?" },
-                color = TikPrimary,
-                fontWeight = FontWeight.Bold,
-            )
-        }
+                .clip(RoundedCornerShape(10.dp)),
+            contentScale = ContentScale.Fit,
+            error = painterResource(R.drawable.ic_image_24dp),
+            fallback = painterResource(R.drawable.ic_image_24dp),
+        )
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text(app.appName, color = TikOnBg, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
