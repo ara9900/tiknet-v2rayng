@@ -300,7 +300,7 @@ class TikNetMainViewModel(
         uptimeJob = viewModelScope.launch {
             while (isActive) {
                 _ui.update { it.copy(uptimeTick = System.currentTimeMillis()) }
-                delay(1000)
+                delay(5_000)
             }
         }
     }

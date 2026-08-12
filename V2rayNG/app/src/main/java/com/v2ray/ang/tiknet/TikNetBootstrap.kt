@@ -12,14 +12,23 @@ import java.io.File
 
 /**
  * TikNet defaults: Iran routing whitelist + Iran geo rule-set source.
- * Refreshes geo assets quietly on each app open.
+ * Geo assets refresh at most once per [GEO_REFRESH_TTL_MS] to avoid multi‑MB downloads
+ * on every cold start (that competed with VPN bring‑up for ~30s on Android 16).
  */
 object TikNetBootstrap {
     private const val IRAN_GEO_SOURCE = "Chocolate4U/Iran-v2ray-rules"
+    private const val PREF_ROUTING_SEEDED = "tiknet_routing_iran_seeded"
+    private const val PREF_GEO_LAST_OK_MS = "tiknet_geo_last_ok_ms"
+    private const val GEO_REFRESH_TTL_MS = 7L * 24 * 60 * 60 * 1000 // 7 days
+    private const val MIN_GEO_BYTES = 100_000L
 
     fun applyDefaults(context: Context) {
         runCatching {
-            SettingsManager.resetRoutingRulesetsFromPresets(context, RoutingType.WHITE_IRAN)
+            if (MmkvManager.decodeSettingsBool(PREF_ROUTING_SEEDED) != true) {
+                SettingsManager.resetRoutingRulesetsFromPresets(context, RoutingType.WHITE_IRAN)
+                MmkvManager.encodeSettings(PREF_ROUTING_SEEDED, true)
+                LogUtil.i(AppConfig.TAG, "TikNetBootstrap: Iran routing seeded")
+            }
             MmkvManager.encodeSettings(AppConfig.PREF_GEO_FILES_SOURCES, IRAN_GEO_SOURCE)
         }.onFailure {
             LogUtil.e(AppConfig.TAG, "TikNetBootstrap defaults failed", it)
@@ -30,9 +39,21 @@ object TikNetBootstrap {
         runCatching {
             val extDir = File(Utils.userAssetPath(context))
             if (!extDir.exists()) extDir.mkdirs()
+
+            val lastOk = MmkvManager.decodeSettingsString(PREF_GEO_LAST_OK_MS)?.toLongOrNull() ?: 0L
+            val files = listOf(AppConfig.GEOSITE_DAT, AppConfig.GEOIP_DAT)
+            val allPresent = files.all { name ->
+                val f = File(extDir, name)
+                f.isFile && f.length() >= MIN_GEO_BYTES
+            }
+            val fresh = (System.currentTimeMillis() - lastOk) < GEO_REFRESH_TTL_MS
+            if (allPresent && fresh) {
+                LogUtil.i(AppConfig.TAG, "TikNetBootstrap: geo assets fresh, skip download")
+                return
+            }
+
             val source = MmkvManager.decodeSettingsString(AppConfig.PREF_GEO_FILES_SOURCES)
                 ?: IRAN_GEO_SOURCE
-            val files = listOf(AppConfig.GEOSITE_DAT, AppConfig.GEOIP_DAT)
             for (name in files) {
                 val url = String.format(AppConfig.GITHUB_DOWNLOAD_URL, source).concatUrl(name)
                 downloadBinary(url, File(extDir, name))
@@ -43,6 +64,7 @@ object TikNetBootstrap {
                     File(extDir, AppConfig.GEOIP_ONLY_CN_PRIVATE_DAT),
                 )
             }
+            MmkvManager.encodeSettings(PREF_GEO_LAST_OK_MS, System.currentTimeMillis().toString())
             LogUtil.i(AppConfig.TAG, "TikNetBootstrap: geo assets refreshed from $source")
         }.onFailure {
             LogUtil.e(AppConfig.TAG, "TikNetBootstrap geo refresh failed", it)

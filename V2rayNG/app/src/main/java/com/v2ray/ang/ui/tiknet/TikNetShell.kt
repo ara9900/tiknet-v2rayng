@@ -542,26 +542,58 @@ private fun StatusHeroCard(
     connected: Boolean,
     busy: Boolean,
 ) {
-    val infinite = rememberInfiniteTransition(label = "statusGlow")
-    val glow by infinite.animateFloat(
-        initialValue = 0.22f,
-        targetValue = if (connected || busy) 0.55f else 0.28f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1600, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse,
-        ),
-        label = "glowAlpha",
-    )
-    val borderPulse by infinite.animateFloat(
-        initialValue = 1.2f,
-        targetValue = if (connected || busy) 2.2f else 1.4f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1800, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse,
-        ),
-        label = "borderW",
-    )
+    if (busy) {
+        val infinite = rememberInfiniteTransition(label = "statusGlow")
+        val glow by infinite.animateFloat(
+            initialValue = 0.22f,
+            targetValue = 0.55f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(1600, easing = FastOutSlowInEasing),
+                repeatMode = RepeatMode.Reverse,
+            ),
+            label = "glowAlpha",
+        )
+        val borderPulse by infinite.animateFloat(
+            initialValue = 1.2f,
+            targetValue = 2.2f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(1800, easing = FastOutSlowInEasing),
+                repeatMode = RepeatMode.Reverse,
+            ),
+            label = "borderW",
+        )
+        StatusHeroCardBody(
+            statusLabel, statusHint, statusColor, serverTitle,
+            connected = connected,
+            busy = true,
+            glow = glow,
+            borderPulse = borderPulse,
+        )
+    } else {
+        StatusHeroCardBody(
+            statusLabel,
+            statusHint,
+            statusColor,
+            serverTitle,
+            connected = connected,
+            busy = false,
+            glow = if (connected) 0.42f else 0.28f,
+            borderPulse = if (connected) 1.6f else 1.4f,
+        )
+    }
+}
 
+@Composable
+private fun StatusHeroCardBody(
+    statusLabel: String,
+    statusHint: String,
+    statusColor: Color,
+    serverTitle: String,
+    connected: Boolean,
+    busy: Boolean,
+    glow: Float,
+    borderPulse: Float,
+) {
     Box(
         Modifier
             .fillMaxWidth()
@@ -709,26 +741,46 @@ private fun ConnectPowerButton(
     onClick: () -> Unit,
 ) {
     val color = if (connected) TikConnected else TikPrimary
-    val infinite = rememberInfiniteTransition(label = "powerPulse")
-    val pulse by infinite.animateFloat(
-        initialValue = 0.35f,
-        targetValue = 0.72f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1400, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse,
-        ),
-        label = "pulse",
-    )
-    val scale by infinite.animateFloat(
-        initialValue = 1f,
-        targetValue = if (busy || connected) 1.04f else 1.02f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1600, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse,
-        ),
-        label = "scale",
-    )
+    if (busy) {
+        val infinite = rememberInfiniteTransition(label = "powerPulse")
+        val pulse by infinite.animateFloat(
+            initialValue = 0.35f,
+            targetValue = 0.72f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(1400, easing = FastOutSlowInEasing),
+                repeatMode = RepeatMode.Reverse,
+            ),
+            label = "pulse",
+        )
+        val scale by infinite.animateFloat(
+            initialValue = 1f,
+            targetValue = 1.04f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(1600, easing = FastOutSlowInEasing),
+                repeatMode = RepeatMode.Reverse,
+            ),
+            label = "scale",
+        )
+        ConnectPowerButtonBody(color, connected, pulse, scale, onClick)
+    } else {
+        ConnectPowerButtonBody(
+            color = color,
+            connected = connected,
+            pulse = if (connected) 0.45f else 0.35f,
+            scale = 1f,
+            onClick = onClick,
+        )
+    }
+}
 
+@Composable
+private fun ConnectPowerButtonBody(
+    color: Color,
+    connected: Boolean,
+    pulse: Float,
+    scale: Float,
+    onClick: () -> Unit,
+) {
     Box(
         contentAlignment = Alignment.Center,
         modifier = Modifier
