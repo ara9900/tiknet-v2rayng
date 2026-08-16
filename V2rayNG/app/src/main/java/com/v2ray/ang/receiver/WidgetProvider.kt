@@ -189,13 +189,19 @@ class WidgetProvider : AppWidgetProvider() {
     }
 
     companion object {
-        fun refreshAll(context: Context, phase: Phase? = null) {
+        fun refreshAll(context: Context) {
             val mgr = AppWidgetManager.getInstance(context) ?: return
             val ids = mgr.getAppWidgetIds(ComponentName(context, WidgetProvider::class.java))
             if (ids.isEmpty()) return
             val provider = WidgetProvider()
-            val resolved = phase ?: provider.resolvePhase(context)
-            provider.updateWidgets(context, mgr, ids, resolved)
+            provider.updateWidgets(context, mgr, ids, provider.resolvePhase(context))
+        }
+
+        private fun refreshAll(context: Context, phase: Phase) {
+            val mgr = AppWidgetManager.getInstance(context) ?: return
+            val ids = mgr.getAppWidgetIds(ComponentName(context, WidgetProvider::class.java))
+            if (ids.isEmpty()) return
+            WidgetProvider().updateWidgets(context, mgr, ids, phase)
         }
 
         /** Ask home launcher / widget host to redraw after settings change (cross-process). */
