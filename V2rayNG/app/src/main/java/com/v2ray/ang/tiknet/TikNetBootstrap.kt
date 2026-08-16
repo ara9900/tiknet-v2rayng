@@ -11,7 +11,7 @@ import com.v2ray.ang.util.Utils
 import java.io.File
 
 /**
- * TikNet defaults: Iran routing whitelist + Iran geo rule-set source.
+ * TikNet defaults: optional Iran+LAN direct routing + Iran geo rule-set source.
  * Geo assets refresh at most once per [GEO_REFRESH_TTL_MS] to avoid multi‑MB downloads
  * on every cold start (that competed with VPN bring‑up for ~30s on Android 16).
  */
@@ -24,14 +24,38 @@ object TikNetBootstrap {
 
     fun applyDefaults(context: Context) {
         runCatching {
-            if (MmkvManager.decodeSettingsBool(PREF_ROUTING_SEEDED) != true) {
-                SettingsManager.resetRoutingRulesetsFromPresets(context, RoutingType.WHITE_IRAN)
-                MmkvManager.encodeSettings(PREF_ROUTING_SEEDED, true)
-                LogUtil.i(AppConfig.TAG, "TikNetBootstrap: Iran routing seeded")
+            val iranOn = TikNetPrefs.isIranDirectEnabled(context)
+            if (iranOn) {
+                if (MmkvManager.decodeSettingsBool(PREF_ROUTING_SEEDED) != true) {
+                    SettingsManager.resetRoutingRulesetsFromPresets(context, RoutingType.WHITE_IRAN)
+                    MmkvManager.encodeSettings(PREF_ROUTING_SEEDED, true)
+                    LogUtil.i(AppConfig.TAG, "TikNetBootstrap: Iran routing seeded")
+                }
+                MmkvManager.encodeSettings(AppConfig.PREF_GEO_FILES_SOURCES, IRAN_GEO_SOURCE)
             }
-            MmkvManager.encodeSettings(AppConfig.PREF_GEO_FILES_SOURCES, IRAN_GEO_SOURCE)
         }.onFailure {
             LogUtil.e(AppConfig.TAG, "TikNetBootstrap defaults failed", it)
+        }
+    }
+
+    /**
+     * Enable/disable Iran domains+IPs and keep LAN/private direct.
+     * Off → global proxy preset (still bypasses LAN).
+     */
+    fun setIranDirectRouting(context: Context, enabled: Boolean) {
+        TikNetPrefs.setIranDirectEnabled(context, enabled)
+        if (enabled) {
+            SettingsManager.resetRoutingRulesetsFromPresets(context, RoutingType.WHITE_IRAN)
+            MmkvManager.encodeSettings(PREF_ROUTING_SEEDED, true)
+            MmkvManager.encodeSettings(AppConfig.PREF_GEO_FILES_SOURCES, IRAN_GEO_SOURCE)
+            // Force a geo refresh attempt so category-ir / geoip:ir work.
+            MmkvManager.encodeSettings(PREF_GEO_LAST_OK_MS, "0")
+            refreshGeoAssets(context)
+            LogUtil.i(AppConfig.TAG, "TikNetBootstrap: Iran direct ON")
+        } else {
+            SettingsManager.resetRoutingRulesetsFromPresets(context, RoutingType.GLOBAL)
+            MmkvManager.encodeSettings(PREF_ROUTING_SEEDED, false)
+            LogUtil.i(AppConfig.TAG, "TikNetBootstrap: Iran direct OFF (global + LAN)")
         }
     }
 

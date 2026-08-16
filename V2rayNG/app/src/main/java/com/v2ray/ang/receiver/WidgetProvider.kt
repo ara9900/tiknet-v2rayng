@@ -11,6 +11,8 @@ import com.v2ray.ang.AppConfig
 import com.v2ray.ang.R
 import com.v2ray.ang.core.CoreServiceManager
 import com.v2ray.ang.core.LauncherManager
+import com.v2ray.ang.handler.MmkvManager
+import com.v2ray.ang.tiknet.TikNetWidgetConnect
 
 class WidgetProvider : AppWidgetProvider() {
     /**
@@ -74,6 +76,10 @@ class WidgetProvider : AppWidgetProvider() {
             if (CoreServiceManager.isRunning()) {
                 LauncherManager.stopService(context)
             } else {
+                val guid = TikNetWidgetConnect.resolveServerGuid(context)
+                if (!guid.isNullOrBlank()) {
+                    MmkvManager.setSelectServer(guid)
+                }
                 LauncherManager.startServiceFromToggle(context)
             }
         } else if (AppConfig.BROADCAST_ACTION_ACTIVITY == intent.action) {

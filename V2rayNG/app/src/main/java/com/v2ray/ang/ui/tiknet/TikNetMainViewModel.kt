@@ -117,6 +117,9 @@ data class TikNetMainUiState(
     /** True when showing cached profile because panel /me failed. */
     val profileOffline: Boolean = false,
     val pinnedServers: Set<String> = emptySet(),
+    val iranDirectEnabled: Boolean = true,
+    val widgetMode: String = TikNetPrefs.WIDGET_MODE_CURRENT,
+    val widgetServerGuid: String? = null,
 ) {
     val isUpdateBlocking: Boolean
         get() = when (val update = appUpdate) {
@@ -165,10 +168,20 @@ class TikNetMainViewModel(
                     userLoading = false,
                     entitlementAlert = alert,
                     pinnedServers = TikNetPrefs.getPinnedServers(application),
+                    iranDirectEnabled = TikNetPrefs.isIranDirectEnabled(application),
+                    widgetMode = TikNetPrefs.getWidgetMode(application),
+                    widgetServerGuid = TikNetPrefs.getWidgetServerGuid(application),
                 )
             }
         } else {
-            _ui.update { it.copy(pinnedServers = TikNetPrefs.getPinnedServers(application)) }
+            _ui.update {
+                it.copy(
+                    pinnedServers = TikNetPrefs.getPinnedServers(application),
+                    iranDirectEnabled = TikNetPrefs.isIranDirectEnabled(application),
+                    widgetMode = TikNetPrefs.getWidgetMode(application),
+                    widgetServerGuid = TikNetPrefs.getWidgetServerGuid(application),
+                )
+            }
         }
         refreshServers()
         observeService()
@@ -440,6 +453,43 @@ class TikNetMainViewModel(
         val pinned = TikNetPrefs.togglePinnedServer(getApplication(), guid)
         _ui.update { it.copy(pinnedServers = pinned) }
         refreshServers()
+    }
+
+    fun setIranDirectEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            _ui.update { it.copy(busy = true, syncMessage = if (enabled) "در حال فعال‌سازی مسیریابی ایران…" else "در حال غیرفعال‌سازی…") }
+            withContext(Dispatchers.IO) {
+                TikNetBootstrap.setIranDirectRouting(getApplication(), enabled)
+            }
+            _ui.update {
+                it.copy(
+                    busy = false,
+                    iranDirectEnabled = enabled,
+                    syncMessage = if (enabled) {
+                        "مسیریابی ایران و لوکال فعال شد"
+                    } else {
+                        "مسیریابی ایران خاموش شد (فقط لوکال مستقیم می‌ماند)"
+                    },
+                )
+            }
+            if (_ui.value.phase == TikNetConnPhase.Connected) {
+                _events.tryEmit(TikNetUiEvent.RestartVpn)
+            }
+        }
+    }
+
+    fun setWidgetMode(mode: String) {
+        TikNetPrefs.setWidgetMode(getApplication(), mode)
+        _ui.update { it.copy(widgetMode = mode) }
+    }
+
+    fun setWidgetServerGuid(guid: String?) {
+        TikNetPrefs.setWidgetServerGuid(getApplication(), guid)
+        _ui.update { it.copy(widgetServerGuid = guid) }
+        if (!guid.isNullOrBlank()) {
+            TikNetPrefs.setWidgetMode(getApplication(), TikNetPrefs.WIDGET_MODE_FIXED)
+            _ui.update { it.copy(widgetMode = TikNetPrefs.WIDGET_MODE_FIXED) }
+        }
     }
 
     private fun refreshSelected() {

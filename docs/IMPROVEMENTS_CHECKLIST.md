@@ -29,3 +29,7 @@
 - [x] One-click support with ticket clipboard
 - [x] Pin favorite servers in picker
 - [x] Home widget status label (connect/disconnect)
+
+## P7 Completeness (4.3.16)
+- [x] Widget connect mode: current / smart / fixed server
+- [x] Simple Iran+LAN direct routing toggle (geo assets)

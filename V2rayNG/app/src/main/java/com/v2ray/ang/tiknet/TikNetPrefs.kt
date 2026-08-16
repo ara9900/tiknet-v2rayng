@@ -17,6 +17,13 @@ object TikNetPrefs {
     private const val KEY_DEVICE_ID = "device_id"
     private const val KEY_ENTITLEMENT_NOTIF_PREFIX = "entitlement_notif_"
     private const val KEY_PINNED_SERVERS = "pinned_server_guids"
+    private const val KEY_WIDGET_MODE = "widget_connect_mode"
+    private const val KEY_WIDGET_SERVER = "widget_server_guid"
+    private const val KEY_IRAN_DIRECT = "iran_direct_routing_enabled"
+
+    const val WIDGET_MODE_CURRENT = "current"
+    const val WIDGET_MODE_SMART = "smart"
+    const val WIDGET_MODE_FIXED = "fixed"
 
     private fun prefs(ctx: Context): SharedPreferences =
         ctx.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -131,5 +138,27 @@ object TikNetPrefs {
             .putString(KEY_PINNED_SERVERS, cur.joinToString(","))
             .apply()
         return cur
+    }
+
+    fun getWidgetMode(ctx: Context): String =
+        prefs(ctx).getString(KEY_WIDGET_MODE, WIDGET_MODE_CURRENT) ?: WIDGET_MODE_CURRENT
+
+    fun setWidgetMode(ctx: Context, mode: String) {
+        prefs(ctx).edit().putString(KEY_WIDGET_MODE, mode).apply()
+    }
+
+    fun getWidgetServerGuid(ctx: Context): String? =
+        prefs(ctx).getString(KEY_WIDGET_SERVER, null)?.takeIf { it.isNotBlank() }
+
+    fun setWidgetServerGuid(ctx: Context, guid: String?) {
+        prefs(ctx).edit().putString(KEY_WIDGET_SERVER, guid).apply()
+    }
+
+    /** Default true — Iran + LAN direct routing is TikNet's recommended mode. */
+    fun isIranDirectEnabled(ctx: Context): Boolean =
+        prefs(ctx).getBoolean(KEY_IRAN_DIRECT, true)
+
+    fun setIranDirectEnabled(ctx: Context, enabled: Boolean) {
+        prefs(ctx).edit().putBoolean(KEY_IRAN_DIRECT, enabled).apply()
     }
 }
