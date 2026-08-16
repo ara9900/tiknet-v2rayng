@@ -118,7 +118,11 @@ class TikNetMainActivity : HelperBaseComponentActivity() {
             TikNetConnPhase.Disconnected -> {
                 viewModel.requestConnect()
             }
-            else -> Unit
+            TikNetConnPhase.Connecting, TikNetConnPhase.Disconnecting -> {
+                // Cancel in-progress smart ping / connect, then ensure service is stopped.
+                viewModel.cancelConnectAttempt()
+                LauncherManager.stopService(this)
+            }
         }
     }
 

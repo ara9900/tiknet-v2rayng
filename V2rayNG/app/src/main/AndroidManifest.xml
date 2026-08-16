@@ -311,6 +311,20 @@
             </intent-filter>
         </receiver>
         <receiver
+            android:name=".receiver.CompactWidgetProvider"
+            android:exported="true"
+            android:label="@string/tiknet_widget_compact_name"
+            android:process=":RunSoLibV2RayDaemon">
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/app_widget_compact_provider" />
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="${applicationId}.action.widget.click" />
+                <action android:name="${applicationId}.action.activity" />
+            </intent-filter>
+        </receiver>
+        <receiver
             android:name=".receiver.BootReceiver"
             android:exported="true"
             android:label="BootReceiver">

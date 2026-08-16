@@ -13,8 +13,8 @@ android {
         applicationId = "com.tik.net"
         minSdk = 24
         targetSdk = 37
-        versionCode = 40320
-        versionName = "4.3.20"
+        versionCode = 40321
+        versionName = "4.3.21"
 
         val abiFilterList = (properties["ABI_FILTERS"] as? String)?.split(';')
         splits {

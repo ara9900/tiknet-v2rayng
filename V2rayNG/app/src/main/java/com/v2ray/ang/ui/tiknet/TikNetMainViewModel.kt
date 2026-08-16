@@ -307,8 +307,12 @@ class TikNetMainViewModel(
                         _ui.update { it.copy(isPinging = true) }
                     }
 
-                    is MainServiceEvent.MeasureConfigFinish,
                     MainServiceEvent.MeasureConfigSuccess -> {
+                        // Per-server ping result — refresh list only; do not connect yet.
+                        refreshServers()
+                    }
+
+                    is MainServiceEvent.MeasureConfigFinish -> {
                         refreshServers()
                         _ui.update { it.copy(isPinging = false) }
                         if (pendingSmartConnect) {
@@ -322,6 +326,7 @@ class TikNetMainViewModel(
                                     it.copy(
                                         smartPicking = false,
                                         phase = TikNetConnPhase.Disconnected,
+                                        busy = false,
                                         error = "سروری با پینگ معتبر پیدا نشد",
                                     )
                                 }
@@ -449,7 +454,7 @@ class TikNetMainViewModel(
                 pinnedServers = pinned,
                 selectedGuid = selectedItem?.guid ?: selected,
                 selectedTitle = when {
-                    it.smartMode && selectedItem == null -> "اتصال هوشمند"
+                    it.smartMode -> "اتصال هوشمند"
                     selectedItem != null -> selectedItem.remarks
                     else -> "انتخاب سرور"
                 },
@@ -563,28 +568,31 @@ class TikNetMainViewModel(
         com.v2ray.ang.receiver.WidgetProvider.requestUpdate(getApplication())
     }
 
-    fun pinHomeWidget() {
+    fun pinHomeWidget(kind: com.v2ray.ang.tiknet.TikNetWidgetPin.Kind = com.v2ray.ang.tiknet.TikNetWidgetPin.Kind.Full) {
         val ctx = getApplication<Application>()
         if (!com.v2ray.ang.tiknet.TikNetWidgetPin.isSupported(ctx)) {
-            showMessage(ctx.getString(com.v2ray.ang.R.string.tiknet_widget_pin_unsupported))
+            showMessage("لانچر دستگاه از افزودن ویجت داخل اپ پشتیبانی نمی‌کند. از لیست ویجت‌ها دستی اضافه کنید.")
             return
         }
-        val ok = com.v2ray.ang.tiknet.TikNetWidgetPin.requestPin(ctx)
+        val ok = com.v2ray.ang.tiknet.TikNetWidgetPin.requestPin(ctx, kind)
         showMessage(
-            ctx.getString(
-                if (ok) com.v2ray.ang.R.string.tiknet_widget_pin_requested
-                else com.v2ray.ang.R.string.tiknet_widget_pin_unsupported,
-            ),
+            if (ok) "اضافه کردن ویجت را روی صفحهٔ اصلی تأیید کنید"
+            else "لانچر دستگاه از افزودن ویجت داخل اپ پشتیبانی نمی‌کند. از لیست ویجت‌ها دستی اضافه کنید.",
         )
     }
 
-    private fun refreshSelected() {
+    fun refreshSelected() {
         val guid = MmkvManager.getSelectServer()
-        val cfg = guid?.let { MmkvManager.decodeServerConfig(it) }
+        val cfg = guid?.let { MmkvManager.decodeServerConfig(guid) }
         _ui.update {
             it.copy(
                 selectedGuid = guid,
-                selectedTitle = cfg?.remarks?.ifBlank { "سرور" } ?: it.selectedTitle,
+                // Smart mode must keep the picker label as «اتصال هوشمند», never the node name.
+                selectedTitle = if (it.smartMode) {
+                    "اتصال هوشمند"
+                } else {
+                    cfg?.remarks?.ifBlank { "سرور" } ?: it.selectedTitle
+                },
             )
         }
     }
@@ -596,7 +604,7 @@ class TikNetMainViewModel(
             it.copy(
                 smartMode = smartLabel,
                 selectedGuid = guid,
-                selectedTitle = if (smartLabel) "اتصال هوشمند · ${cfg?.remarks.orEmpty()}"
+                selectedTitle = if (smartLabel) "اتصال هوشمند"
                 else cfg?.remarks?.ifBlank { "سرور" } ?: "سرور",
             )
         }
@@ -605,11 +613,6 @@ class TikNetMainViewModel(
 
     fun enableSmartMode() {
         _ui.update { it.copy(smartMode = true, selectedTitle = "اتصال هوشمند") }
-        if (_ui.value.phase == TikNetConnPhase.Connected) {
-            pendingSmartSwitch = true
-            _ui.update { it.copy(smartPicking = true) }
-            pingAllServers()
-        }
     }
 
     fun pingAllServers() {
@@ -651,6 +654,7 @@ class TikNetMainViewModel(
                     phase = TikNetConnPhase.Connecting,
                     smartPicking = true,
                     busy = true,
+                    selectedTitle = "اتصال هوشمند",
                 )
             }
             pendingSmartConnect = true
@@ -687,6 +691,22 @@ class TikNetMainViewModel(
         }
     }
 
+    fun cancelConnectAttempt() {
+        pendingSmartConnect = false
+        pendingSmartSwitch = false
+        TikNetPrefs.setWidgetConnecting(getApplication(), false)
+        com.v2ray.ang.receiver.WidgetProvider.requestUpdate(getApplication())
+        _ui.update {
+            it.copy(
+                phase = TikNetConnPhase.Disconnected,
+                smartPicking = false,
+                busy = false,
+                error = null,
+                selectedTitle = if (it.smartMode) "اتصال هوشمند" else it.selectedTitle,
+            )
+        }
+    }
+
     fun markConnecting() {
         TikNetPrefs.setWidgetConnecting(getApplication(), true)
         com.v2ray.ang.receiver.WidgetProvider.requestUpdate(getApplication())
@@ -696,6 +716,8 @@ class TikNetMainViewModel(
     }
 
     fun markDisconnecting() {
+        pendingSmartConnect = false
+        pendingSmartSwitch = false
         _ui.update {
             it.copy(phase = TikNetConnPhase.Disconnecting, busy = true, error = null, smartPicking = false)
         }

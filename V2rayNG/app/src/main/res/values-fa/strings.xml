@@ -14,6 +14,9 @@
     <string name="tiknet_widget_detail_connected">%1$s · %2$s</string>
     <string name="tiknet_widget_add_home">افزودن ویجت به صفحه اصلی</string>
     <string name="tiknet_widget_add_home_hint">ویجت اتصال تیک‌نت را روی صفحهٔ Home دستگاه می‌گذارد</string>
+    <string name="tiknet_widget_add_compact">افزودن ویجت کوچک (فقط آیکون)</string>
+    <string name="tiknet_widget_add_compact_hint">یک ویجت ۱×۱ فقط با آیکون، بدون متن</string>
+    <string name="tiknet_widget_compact_name">تیک‌نت (آیکون)</string>
     <string name="tiknet_widget_pin_unsupported">لانچر دستگاه از افزودن ویجت داخل اپ پشتیبانی نمی‌کند. از لیست ویجت‌ها دستی اضافه کنید.</string>
     <string name="tiknet_widget_pin_requested">اضافه کردن ویجت را روی صفحهٔ Home تأیید کنید</string>
     <string name="tiknet_widget_pinned_ok">ویجت اضافه شد</string>

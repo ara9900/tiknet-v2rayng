@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/layout_switch"
+    android:layout_width="56dp"
+    android:layout_height="56dp"
+    android:background="@drawable/tiknet_widget_bg_offline"
+    android:padding="4dp">
+
+    <FrameLayout
+        android:id="@+id/layout_background"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_gravity="center"
+        android:background="@drawable/tiknet_widget_icon_ring_offline">
+
+        <ImageView
+            android:id="@+id/image_switch"
+            android:layout_width="26dp"
+            android:layout_height="26dp"
+            android:layout_gravity="center"
+            android:importantForAccessibility="no"
+            android:src="@drawable/ic_stat_tiknet" />
+
+        <ProgressBar
+            android:id="@+id/pb_widget_connecting"
+            style="?android:attr/progressBarStyleSmall"
+            android:layout_width="26dp"
+            android:layout_height="26dp"
+            android:layout_gravity="center"
+            android:indeterminate="true"
+            android:visibility="gone" />
+    </FrameLayout>
+</FrameLayout>

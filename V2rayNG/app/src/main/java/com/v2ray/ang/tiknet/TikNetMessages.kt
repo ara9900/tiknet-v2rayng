@@ -66,4 +66,69 @@ object TikNetMessages {
             "🌐" to raw.trim()
         }
     }
+
+    /** Parse exit-IP probe like "(DE) 1.2.3.4" into `1.2.3.4-آلمان-🇩🇪`. */
+    fun formatDestination(raw: String?, remarksFallback: String? = null): String {
+        if (!raw.isNullOrBlank()) {
+            val m = Regex("""\(([A-Za-z]{2})\)\s*(.+)""").find(raw.trim())
+            if (m != null) {
+                val code = m.groupValues[1].uppercase()
+                val ip = m.groupValues[2].trim()
+                val flag = flagForCountryCode(code)
+                val name = countryNameFa(code)
+                return "$ip-$name-$flag"
+            }
+            val ipOnly = Regex("""(\d{1,3}(?:\.\d{1,3}){3})""").find(raw)?.value
+            if (ipOnly != null) {
+                val fromRemarks = countryFromRemarks(remarksFallback)
+                return "$ipOnly-${fromRemarks.first}-${fromRemarks.second}"
+            }
+            return raw.trim()
+        }
+        val fromRemarks = countryFromRemarks(remarksFallback)
+        if (fromRemarks.first == "—" && fromRemarks.second == "🌐") return "—"
+        return "—-${fromRemarks.first}-${fromRemarks.second}"
+    }
+
+    fun countryNameFa(code: String): String = when (code.uppercase()) {
+        "DE" -> "آلمان"
+        "NL" -> "هلند"
+        "GB", "UK" -> "انگلیس"
+        "US" -> "آمریکا"
+        "FR" -> "فرانسه"
+        "TR" -> "ترکیه"
+        "AE" -> "امارات"
+        "FI" -> "فنلاند"
+        "SE" -> "سوئد"
+        "NO" -> "نروژ"
+        "IT" -> "ایتالیا"
+        "ES" -> "اسپانیا"
+        "CA" -> "کانادا"
+        "JP" -> "ژاپن"
+        "SG" -> "سنگاپور"
+        "IN" -> "هند"
+        "IR" -> "ایران"
+        else -> code.uppercase()
+    }
+
+    private fun countryFromRemarks(remarks: String?): Pair<String, String> {
+        val r = remarks.orEmpty()
+        if (r.isBlank()) return "—" to "🌐"
+        val lower = r.lowercase()
+        val flag = Regex("""[\uD83C][\uDDE6-\uDDFF][\uD83C][\uDDE6-\uDDFF]""").find(r)?.value ?: "🌐"
+        val name = when {
+            "آلمان" in r || "germany" in lower -> "آلمان"
+            "هلند" in r || "netherlands" in lower -> "هلند"
+            "انگلیس" in r || "britain" in lower || "united kingdom" in lower -> "انگلیس"
+            "آمریکا" in r || "usa" in lower || "united states" in lower -> "آمریکا"
+            "فرانسه" in r || "france" in lower -> "فرانسه"
+            "ترکیه" in r || "turkey" in lower || "türkiye" in lower -> "ترکیه"
+            "امارات" in r || "uae" in lower || "dubai" in lower -> "امارات"
+            else -> r.replace(Regex("""[\uD83C][\uDDE6-\uDDFF][\uD83C][\uDDE6-\uDDFF]"""), "")
+                .trim()
+                .substringBefore(" ")
+                .ifBlank { "—" }
+        }
+        return name to flag
+    }
 }

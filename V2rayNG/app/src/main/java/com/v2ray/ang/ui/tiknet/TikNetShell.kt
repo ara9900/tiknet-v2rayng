@@ -276,7 +276,8 @@ fun TikNetShell(
                             onIranDirectChange = { viewModel.setIranDirectEnabled(it) },
                             onWidgetModeChange = { viewModel.setWidgetMode(it) },
                             onWidgetServerChange = { viewModel.setWidgetServerGuid(it) },
-                            onPinWidget = { viewModel.pinHomeWidget() },
+                            onPinWidget = { viewModel.pinHomeWidget(com.v2ray.ang.tiknet.TikNetWidgetPin.Kind.Full) },
+                            onPinCompactWidget = { viewModel.pinHomeWidget(com.v2ray.ang.tiknet.TikNetWidgetPin.Kind.Compact) },
                         )
                     }
                 }
@@ -642,13 +643,13 @@ private fun ConnectTab(
                 statusLabel = statusLabel,
                 statusHint = statusHint,
                 statusColor = statusColor,
-                serverTitle = state.selectedTitle,
+                destinationLine = destinationLine(state),
                 connected = state.phase == TikNetConnPhase.Connected && !state.smartPicking,
                 busy = busy,
             )
             Spacer(Modifier.height(16.dp))
             ServerSelectorCard(
-                title = state.selectedTitle,
+                title = if (state.smartMode) "اتصال هوشمند" else state.selectedTitle,
                 smartMode = state.smartMode,
                 onClick = onOpenServers,
             )
@@ -691,7 +692,7 @@ private fun StatusHeroCard(
     statusLabel: String,
     statusHint: String,
     statusColor: Color,
-    serverTitle: String,
+    destinationLine: String,
     connected: Boolean,
     busy: Boolean,
 ) {
@@ -716,7 +717,7 @@ private fun StatusHeroCard(
             label = "borderW",
         )
         StatusHeroCardBody(
-            statusLabel, statusHint, statusColor, serverTitle,
+            statusLabel, statusHint, statusColor, destinationLine,
             connected = connected,
             busy = true,
             glow = glow,
@@ -727,7 +728,7 @@ private fun StatusHeroCard(
             statusLabel,
             statusHint,
             statusColor,
-            serverTitle,
+            destinationLine,
             connected = connected,
             busy = false,
             glow = if (connected) 0.42f else 0.28f,
@@ -741,7 +742,7 @@ private fun StatusHeroCardBody(
     statusLabel: String,
     statusHint: String,
     statusColor: Color,
-    serverTitle: String,
+    destinationLine: String,
     connected: Boolean,
     busy: Boolean,
     glow: Float,
@@ -800,7 +801,7 @@ private fun StatusHeroCardBody(
                 Text(statusHint, color = TikMuted, fontSize = 13.sp)
                 Spacer(Modifier.height(6.dp))
                 Text(
-                    "مقصد: $serverTitle",
+                    "مقصد: $destinationLine",
                     color = TikOnBg,
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Medium,
@@ -1813,6 +1814,7 @@ private fun AccountTab(
     onWidgetModeChange: (String) -> Unit = {},
     onWidgetServerChange: (String?) -> Unit = {},
     onPinWidget: () -> Unit = {},
+    onPinCompactWidget: () -> Unit = {},
 ) {
     val user = state.user
     val expired = user?.isExpired == true
@@ -2027,6 +2029,7 @@ private fun AccountTab(
                 onWidgetModeChange = onWidgetModeChange,
                 onWidgetServerChange = onWidgetServerChange,
                 onPinWidget = onPinWidget,
+                onPinCompactWidget = onPinCompactWidget,
             )
 
             Spacer(Modifier.height(24.dp))
@@ -2306,6 +2309,7 @@ private fun ConnectionSettingsCard(
     onWidgetModeChange: (String) -> Unit,
     onWidgetServerChange: (String?) -> Unit,
     onPinWidget: () -> Unit = {},
+    onPinCompactWidget: () -> Unit = {},
 ) {
     Column(Modifier.fillMaxWidth()) {
         Column(
@@ -2438,11 +2442,32 @@ private fun ConnectionSettingsCard(
             ) {
                 Icon(Icons.Outlined.Widgets, contentDescription = null, modifier = Modifier.size(20.dp))
                 Spacer(Modifier.width(8.dp))
-                Text(stringResource(R.string.tiknet_widget_add_home), fontWeight = FontWeight.SemiBold)
+                Text("افزودن ویجت به صفحه اصلی", fontWeight = FontWeight.SemiBold)
             }
             Spacer(Modifier.height(6.dp))
             Text(
-                stringResource(R.string.tiknet_widget_add_home_hint),
+                "ویجت کامل اتصال تیک‌نت را روی صفحهٔ اصلی دستگاه می‌گذارد",
+                color = TikMuted,
+                fontSize = 11.sp,
+                lineHeight = 15.sp,
+            )
+            Spacer(Modifier.height(10.dp))
+            OutlinedButton(
+                onClick = onPinCompactWidget,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(48.dp),
+                shape = RoundedCornerShape(12.dp),
+                border = BorderStroke(1.dp, TikPrimary.copy(alpha = 0.35f)),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = TikOnBg),
+            ) {
+                Icon(Icons.Outlined.PushPin, contentDescription = null, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("افزودن ویجت کوچک (فقط آیکون)", fontWeight = FontWeight.SemiBold)
+            }
+            Spacer(Modifier.height(6.dp))
+            Text(
+                "یک ویجت خیلی کوچک فقط با آیکون، بدون متن و جزئیات",
                 color = TikMuted,
                 fontSize = 11.sp,
                 lineHeight = 15.sp,
@@ -2920,7 +2945,7 @@ private fun statusColor(state: TikNetMainUiState): Color = when {
 }
 
 private fun statusLabel(state: TikNetMainUiState): String = when {
-    state.smartPicking -> "انتخاب بهترین سرور…"
+    state.smartPicking -> "در حال یافتن سریع‌ترین سرور…"
     state.phase == TikNetConnPhase.Connected -> "متصل به اینترنت"
     state.phase == TikNetConnPhase.Connecting -> "در حال اتصال…"
     state.phase == TikNetConnPhase.Disconnecting -> "در حال قطع…"
@@ -2928,11 +2953,20 @@ private fun statusLabel(state: TikNetMainUiState): String = when {
 }
 
 private fun statusHint(state: TikNetMainUiState): String = when {
-    state.smartPicking -> "پینگ سرورها در حال اندازه‌گیری است"
+    state.smartPicking -> "پینگ همهٔ سرورها گرفته می‌شود و بهترین انتخاب می‌شود"
     state.phase == TikNetConnPhase.Connected -> "ترافیک شما از طریق VPN عبور می‌کند"
     state.phase == TikNetConnPhase.Connecting -> "لطفاً چند ثانیه صبر کنید"
     state.phase == TikNetConnPhase.Disconnecting -> "در حال قطع اتصال"
     else -> "برای اتصال، دکمه پایین را بزنید"
+}
+
+private fun destinationLine(state: TikNetMainUiState): String {
+    if (state.smartPicking) return "در حال یافتن…"
+    val connected = state.phase == TikNetConnPhase.Connected
+    if (!connected) return "—"
+    if (state.exitIpText.isBlank()) return "در حال دریافت…"
+    val remarks = state.servers.firstOrNull { it.guid == state.selectedGuid }?.remarks
+    return TikNetMessages.formatDestination(state.exitIpText, remarks)
 }
 
 private fun latencyColor(ms: Long): Color = when {
