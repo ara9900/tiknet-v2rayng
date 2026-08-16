@@ -19,6 +19,7 @@ object TikNetPrefs {
     private const val KEY_PINNED_SERVERS = "pinned_server_guids"
     private const val KEY_WIDGET_MODE = "widget_connect_mode"
     private const val KEY_WIDGET_SERVER = "widget_server_guid"
+    private const val KEY_WIDGET_CONNECTING = "widget_connecting"
     private const val KEY_IRAN_DIRECT = "iran_direct_routing_enabled"
 
     const val WIDGET_MODE_CURRENT = "current"
@@ -140,18 +141,40 @@ object TikNetPrefs {
         return cur
     }
 
-    fun getWidgetMode(ctx: Context): String =
-        prefs(ctx).getString(KEY_WIDGET_MODE, WIDGET_MODE_CURRENT) ?: WIDGET_MODE_CURRENT
+    fun getWidgetMode(ctx: Context): String {
+        // MMKV is multi-process — widget runs in the VPN daemon process.
+        val mmkv = com.v2ray.ang.handler.MmkvManager.decodeSettingsString(KEY_WIDGET_MODE)
+        if (!mmkv.isNullOrBlank()) return mmkv
+        val legacy = prefs(ctx).getString(KEY_WIDGET_MODE, WIDGET_MODE_CURRENT) ?: WIDGET_MODE_CURRENT
+        com.v2ray.ang.handler.MmkvManager.encodeSettings(KEY_WIDGET_MODE, legacy)
+        return legacy
+    }
 
     fun setWidgetMode(ctx: Context, mode: String) {
+        com.v2ray.ang.handler.MmkvManager.encodeSettings(KEY_WIDGET_MODE, mode)
         prefs(ctx).edit().putString(KEY_WIDGET_MODE, mode).apply()
     }
 
-    fun getWidgetServerGuid(ctx: Context): String? =
-        prefs(ctx).getString(KEY_WIDGET_SERVER, null)?.takeIf { it.isNotBlank() }
+    fun getWidgetServerGuid(ctx: Context): String? {
+        val mmkv = com.v2ray.ang.handler.MmkvManager.decodeSettingsString(KEY_WIDGET_SERVER)
+        if (!mmkv.isNullOrBlank()) return mmkv
+        val legacy = prefs(ctx).getString(KEY_WIDGET_SERVER, null)?.takeIf { it.isNotBlank() }
+        if (!legacy.isNullOrBlank()) {
+            com.v2ray.ang.handler.MmkvManager.encodeSettings(KEY_WIDGET_SERVER, legacy)
+        }
+        return legacy
+    }
 
     fun setWidgetServerGuid(ctx: Context, guid: String?) {
+        com.v2ray.ang.handler.MmkvManager.encodeSettings(KEY_WIDGET_SERVER, guid)
         prefs(ctx).edit().putString(KEY_WIDGET_SERVER, guid).apply()
+    }
+
+    fun isWidgetConnecting(ctx: Context): Boolean =
+        com.v2ray.ang.handler.MmkvManager.decodeSettingsBool(KEY_WIDGET_CONNECTING, false)
+
+    fun setWidgetConnecting(ctx: Context, connecting: Boolean) {
+        com.v2ray.ang.handler.MmkvManager.encodeSettings(KEY_WIDGET_CONNECTING, connecting)
     }
 
     /** Default true — Iran + LAN direct routing is TikNet's recommended mode. */

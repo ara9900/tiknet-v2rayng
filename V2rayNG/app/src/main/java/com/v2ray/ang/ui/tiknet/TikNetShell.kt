@@ -95,6 +95,7 @@ import androidx.compose.material.icons.outlined.Troubleshoot
 import androidx.compose.material.icons.outlined.VerifiedUser
 import androidx.compose.material.icons.outlined.VpnKey
 import androidx.compose.material.icons.outlined.WarningAmber
+import androidx.compose.material.icons.outlined.Widgets
 import androidx.compose.material.icons.outlined.WorkspacePremium
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -140,6 +141,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.intl.Locale
@@ -274,6 +276,7 @@ fun TikNetShell(
                             onIranDirectChange = { viewModel.setIranDirectEnabled(it) },
                             onWidgetModeChange = { viewModel.setWidgetMode(it) },
                             onWidgetServerChange = { viewModel.setWidgetServerGuid(it) },
+                            onPinWidget = { viewModel.pinHomeWidget() },
                         )
                     }
                 }
@@ -1809,6 +1812,7 @@ private fun AccountTab(
     onIranDirectChange: (Boolean) -> Unit = {},
     onWidgetModeChange: (String) -> Unit = {},
     onWidgetServerChange: (String?) -> Unit = {},
+    onPinWidget: () -> Unit = {},
 ) {
     val user = state.user
     val expired = user?.isExpired == true
@@ -2022,6 +2026,7 @@ private fun AccountTab(
                 onIranDirectChange = onIranDirectChange,
                 onWidgetModeChange = onWidgetModeChange,
                 onWidgetServerChange = onWidgetServerChange,
+                onPinWidget = onPinWidget,
             )
 
             Spacer(Modifier.height(24.dp))
@@ -2300,6 +2305,7 @@ private fun ConnectionSettingsCard(
     onIranDirectChange: (Boolean) -> Unit,
     onWidgetModeChange: (String) -> Unit,
     onWidgetServerChange: (String?) -> Unit,
+    onPinWidget: () -> Unit = {},
 ) {
     Column(Modifier.fillMaxWidth()) {
         Column(
@@ -2419,6 +2425,28 @@ private fun ConnectionSettingsCard(
                     }
                 }
             }
+
+            Spacer(Modifier.height(14.dp))
+            OutlinedButton(
+                onClick = onPinWidget,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(48.dp),
+                shape = RoundedCornerShape(12.dp),
+                border = BorderStroke(1.dp, TikPrimary.copy(alpha = 0.55f)),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = TikPrimary),
+            ) {
+                Icon(Icons.Outlined.Widgets, contentDescription = null, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(8.dp))
+                Text(stringResource(R.string.tiknet_widget_add_home), fontWeight = FontWeight.SemiBold)
+            }
+            Spacer(Modifier.height(6.dp))
+            Text(
+                stringResource(R.string.tiknet_widget_add_home_hint),
+                color = TikMuted,
+                fontSize = 11.sp,
+                lineHeight = 15.sp,
+            )
         }
     }
 }

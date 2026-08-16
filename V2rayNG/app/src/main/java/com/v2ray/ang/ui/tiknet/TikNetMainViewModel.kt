@@ -550,6 +550,7 @@ class TikNetMainViewModel(
     fun setWidgetMode(mode: String) {
         TikNetPrefs.setWidgetMode(getApplication(), mode)
         _ui.update { it.copy(widgetMode = mode) }
+        com.v2ray.ang.receiver.WidgetProvider.requestUpdate(getApplication())
     }
 
     fun setWidgetServerGuid(guid: String?) {
@@ -559,6 +560,22 @@ class TikNetMainViewModel(
             TikNetPrefs.setWidgetMode(getApplication(), TikNetPrefs.WIDGET_MODE_FIXED)
             _ui.update { it.copy(widgetMode = TikNetPrefs.WIDGET_MODE_FIXED) }
         }
+        com.v2ray.ang.receiver.WidgetProvider.requestUpdate(getApplication())
+    }
+
+    fun pinHomeWidget() {
+        val ctx = getApplication<Application>()
+        if (!com.v2ray.ang.tiknet.TikNetWidgetPin.isSupported(ctx)) {
+            showMessage(ctx.getString(com.v2ray.ang.R.string.tiknet_widget_pin_unsupported))
+            return
+        }
+        val ok = com.v2ray.ang.tiknet.TikNetWidgetPin.requestPin(ctx)
+        showMessage(
+            ctx.getString(
+                if (ok) com.v2ray.ang.R.string.tiknet_widget_pin_requested
+                else com.v2ray.ang.R.string.tiknet_widget_pin_unsupported,
+            ),
+        )
     }
 
     private fun refreshSelected() {
@@ -671,6 +688,8 @@ class TikNetMainViewModel(
     }
 
     fun markConnecting() {
+        TikNetPrefs.setWidgetConnecting(getApplication(), true)
+        com.v2ray.ang.receiver.WidgetProvider.requestUpdate(getApplication())
         _ui.update {
             it.copy(phase = TikNetConnPhase.Connecting, busy = true, error = null)
         }

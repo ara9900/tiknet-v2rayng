@@ -45,6 +45,10 @@ class TikNetMainActivity : HelperBaseComponentActivity() {
         }
         TikNetBootstrap.applyDefaults(this)
         checkAndRequestPermission(PermissionType.POST_NOTIFICATIONS) {}
+        if (intent?.getBooleanExtra(com.v2ray.ang.tiknet.TikNetWidgetPin.EXTRA_WIDGET_PINNED, false) == true) {
+            viewModel.showMessage(getString(com.v2ray.ang.R.string.tiknet_widget_pinned_ok))
+            intent?.removeExtra(com.v2ray.ang.tiknet.TikNetWidgetPin.EXTRA_WIDGET_PINNED)
+        }
     }
 
     @Composable
