@@ -104,6 +104,18 @@ object TikNetApi {
         return executeJson(req, TikNetLoginResponse::class.java)
     }
 
+    /** POST /api/customer/login/token — one-time deep-link / QR login from Telegram bot. */
+    fun loginWithToken(baseUrl: String, token: String): TikNetLoginResponse {
+        val body = gson.toJson(mapOf("token" to token.trim()))
+            .toRequestBody(jsonMedia)
+        val req = Request.Builder()
+            .url("${root(baseUrl)}/api/customer/login/token")
+            .post(body)
+            .header("Accept", "application/json")
+            .build()
+        return executeJson(req, TikNetLoginResponse::class.java)
+    }
+
     fun getMe(baseUrl: String, token: String): TikNetUserInfo {
         val req = Request.Builder()
             .url("${root(baseUrl)}/api/customer/me")
