@@ -137,15 +137,19 @@ object TikNetApi {
             val rootEl = runCatching { JsonParser.parseString(text).asJsonObject }.getOrNull()
                 ?: throw TikNetApiException("Invalid JSON")
             val me = parseUserInfo(rootEl)
-            val brandTg = rootEl.getAsJsonObject("brand")
-                ?.get("support_telegram")
-                ?.asString
-                ?.trim()
-                ?.takeIf { it.isNotEmpty() }
-            val topTg = rootEl.get("support_telegram")?.asString?.trim()?.takeIf { it.isNotEmpty() }
+            fun jsonString(el: com.google.gson.JsonElement?): String? {
+                if (el == null || el.isJsonNull || !el.isJsonPrimitive) return null
+                return el.asString?.trim()?.takeIf { it.isNotEmpty() }
+            }
+            val brandTg = jsonString(rootEl.getAsJsonObject("brand")?.get("support_telegram"))
+            val topTg = jsonString(rootEl.get("support_telegram"))
             val supportTg = brandTg ?: topTg ?: me.supportTelegram
-            val shopEnabled = rootEl.get("shop_enabled")?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isBoolean }?.asBoolean
-                ?: me.shopEnabled
+            val shopEl = rootEl.get("shop_enabled")
+            val shopEnabled = if (shopEl != null && !shopEl.isJsonNull && shopEl.isJsonPrimitive && shopEl.asJsonPrimitive.isBoolean) {
+                shopEl.asBoolean
+            } else {
+                me.shopEnabled
+            }
             val enriched = me.copy(
                 supportTelegram = supportTg,
                 shopEnabled = shopEnabled,
