@@ -103,12 +103,19 @@ object TikNetWidgetConnect {
         return started
     }
 
-    /** Start real ping of all TikNet servers, then connect to lowest on finish. */
+    /** Smart connect: reuse fresh ping cache, else real-ping then connect. */
     fun beginSmartConnect(ctx: Context): Boolean {
         val app = ctx.applicationContext
         val guids = listServerGuids()
         if (guids.isEmpty()) {
             return beginDirectConnect(app)
+        }
+        if (TikNetPingCache.isFresh(app)) {
+            val best = pickBestGuid(app)
+            if (!best.isNullOrBlank()) {
+                MmkvManager.setSelectServer(best)
+                return beginDirectConnect(app)
+            }
         }
         TikNetPrefs.setWidgetSmartPending(app, true)
         TikNetPrefs.setWidgetConnecting(app, true)
@@ -142,6 +149,7 @@ object TikNetWidgetConnect {
             CompactWidgetProvider.refreshAll(app)
             return
         }
+        TikNetPingCache.rememberSuccessfulBatch(app)
         MmkvManager.setSelectServer(best)
         TikNetPrefs.setWidgetConnecting(app, true)
         WidgetProvider.refreshAll(app)

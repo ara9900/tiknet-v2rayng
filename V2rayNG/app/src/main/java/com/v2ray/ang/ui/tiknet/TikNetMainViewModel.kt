@@ -29,6 +29,7 @@ import com.v2ray.ang.tiknet.TikNetFaqItem
 import com.v2ray.ang.tiknet.TikNetNotificationItem
 import com.v2ray.ang.tiknet.TikNetErrors
 import com.v2ray.ang.tiknet.TikNetPrefs
+import com.v2ray.ang.tiknet.TikNetPingCache
 import com.v2ray.ang.tiknet.TikNetReferralInfo
 import com.v2ray.ang.tiknet.TikNetSync
 import com.v2ray.ang.tiknet.TikNetUserInfo
@@ -219,6 +220,7 @@ class TikNetMainViewModel(
                 when (event) {
                     MainServiceEvent.StateRunning,
                     MainServiceEvent.StateStartSuccess -> {
+                        TikNetPingCache.clearFailover(getApplication())
                         _ui.update {
                             it.copy(
                                 phase = TikNetConnPhase.Connected,
@@ -248,6 +250,7 @@ class TikNetMainViewModel(
                     MainServiceEvent.StateNotRunning,
                     MainServiceEvent.StateStopSuccess -> {
                         stopUptimeTicker()
+                        TikNetPingCache.clearFailover(getApplication())
                         _ui.update {
                             it.copy(
                                 phase = TikNetConnPhase.Disconnected,
@@ -263,13 +266,28 @@ class TikNetMainViewModel(
                     }
 
                     is MainServiceEvent.StateStartFailure -> {
-                        _ui.update {
-                            it.copy(
-                                phase = TikNetConnPhase.Disconnected,
-                                busy = false,
-                                smartPicking = false,
-                                error = event.errorMessage.ifBlank { "اتصال ناموفق" },
-                            )
+                        val ctx = getApplication<Application>()
+                        if (_ui.value.smartMode && !TikNetPingCache.isFailoverUsed(ctx) && !pendingSmartConnect) {
+                            // Cached best failed on this network → one forced re-ping + reconnect.
+                            TikNetPingCache.markFailoverUsed(ctx)
+                            TikNetPingCache.invalidate(ctx)
+                            _ui.update {
+                                it.copy(
+                                    error = null,
+                                    syncMessage = "پینگ تازه به‌خاطر تغییر شبکه…",
+                                )
+                            }
+                            lastSmartConnectAtMs = 0L
+                            startSmartPingThenConnect()
+                        } else {
+                            _ui.update {
+                                it.copy(
+                                    phase = TikNetConnPhase.Disconnected,
+                                    busy = false,
+                                    smartPicking = false,
+                                    error = event.errorMessage.ifBlank { "اتصال ناموفق" },
+                                )
+                            }
                         }
                     }
 
@@ -316,31 +334,25 @@ class TikNetMainViewModel(
                     is MainServiceEvent.MeasureConfigFinish -> {
                         refreshServers()
                         _ui.update { it.copy(isPinging = false) }
-                        if (pendingSmartConnect) {
-                            pendingSmartConnect = false
-                            val best = pickBestGuid()
-                            if (best != null) {
-                                selectServer(best, smartLabel = true)
-                                _events.tryEmit(TikNetUiEvent.StartVpn)
-                            } else {
-                                _ui.update {
-                                    it.copy(
-                                        smartPicking = false,
-                                        phase = TikNetConnPhase.Disconnected,
-                                        busy = false,
-                                        error = "سروری با پینگ معتبر پیدا نشد",
-                                    )
+                        when {
+                            pendingSmartConnect -> {
+                                pendingSmartConnect = false
+                                finishSmartPickAndConnect()
+                            }
+                            pendingSmartSwitch -> {
+                                pendingSmartSwitch = false
+                                val best = pickBestGuid()
+                                if (best != null && best != _ui.value.selectedGuid) {
+                                    TikNetPingCache.rememberSuccessfulBatch(getApplication())
+                                    selectServer(best, smartLabel = true)
+                                    _events.tryEmit(TikNetUiEvent.RestartVpn)
+                                } else {
+                                    _ui.update { it.copy(smartPicking = false) }
                                 }
                             }
-                        }
-                        if (pendingSmartSwitch) {
-                            pendingSmartSwitch = false
-                            val best = pickBestGuid()
-                            if (best != null && best != _ui.value.selectedGuid) {
-                                selectServer(best, smartLabel = true)
-                                _events.tryEmit(TikNetUiEvent.RestartVpn)
-                            } else {
-                                _ui.update { it.copy(smartPicking = false) }
+                            else -> {
+                                // Manual / list ping — refresh cache TTL when results are usable.
+                                TikNetPingCache.rememberSuccessfulBatch(getApplication())
                             }
                         }
                     }
@@ -646,46 +658,77 @@ class TikNetMainViewModel(
             ?: _ui.value.servers.firstOrNull()?.guid
     }
 
-    /** Power button: smart → ping then connect; manual → connect selected. */
+    private fun startSmartPingThenConnect() {
+        _ui.update {
+            it.copy(
+                phase = TikNetConnPhase.Connecting,
+                smartPicking = true,
+                busy = true,
+                selectedTitle = "اتصال هوشمند",
+            )
+        }
+        pendingSmartConnect = true
+        pingAllServers()
+        viewModelScope.launch {
+            delay(12_000)
+            if (pendingSmartConnect) {
+                pendingSmartConnect = false
+                finishSmartPickAndConnect()
+            }
+        }
+    }
+
+    private fun finishSmartPickAndConnect() {
+        val best = pickBestGuid()
+        if (best != null) {
+            TikNetPingCache.rememberSuccessfulBatch(getApplication())
+            selectServer(best, smartLabel = true)
+            _events.tryEmit(TikNetUiEvent.StartVpn)
+        } else {
+            _ui.update {
+                it.copy(
+                    smartPicking = false,
+                    phase = TikNetConnPhase.Disconnected,
+                    busy = false,
+                    error = "سروری با پینگ معتبر پیدا نشد",
+                )
+            }
+        }
+    }
+
+    private fun connectSmartFromCache() {
+        val best = pickBestGuid()
+        if (best == null) {
+            startSmartPingThenConnect()
+            return
+        }
+        _ui.update {
+            it.copy(
+                phase = TikNetConnPhase.Connecting,
+                smartPicking = false,
+                busy = true,
+                selectedTitle = "اتصال هوشمند",
+                syncMessage = "وصل سریع با پینگ ذخیره‌شده…",
+            )
+        }
+        selectServer(best, smartLabel = true)
+        markConnecting()
+        _events.tryEmit(TikNetUiEvent.StartVpn)
+    }
+
+    /** Power button: smart → cache or ping-then-connect; manual → connect selected. */
     fun requestConnect() {
         _ui.update { it.copy(error = null) }
         if (_ui.value.smartMode) {
             val now = System.currentTimeMillis()
-            // Already pinging / connecting — ignore duplicate starts (user cancels via toggle).
             if (pendingSmartConnect || _ui.value.smartPicking) return
-            // Short debounce against accidental double-tap after a cancel/reconnect.
             if (now - lastSmartConnectAtMs < 1_200L) return
             lastSmartConnectAtMs = now
-            _ui.update {
-                it.copy(
-                    phase = TikNetConnPhase.Connecting,
-                    smartPicking = true,
-                    busy = true,
-                    selectedTitle = "اتصال هوشمند",
-                )
-            }
-            pendingSmartConnect = true
-            pingAllServers()
-            // Fallback if ping service never finishes
-            viewModelScope.launch {
-                delay(12_000)
-                if (pendingSmartConnect) {
-                    pendingSmartConnect = false
-                    val best = pickBestGuid()
-                    if (best != null) {
-                        selectServer(best, smartLabel = true)
-                        _events.tryEmit(TikNetUiEvent.StartVpn)
-                    } else {
-                        _ui.update {
-                            it.copy(
-                                smartPicking = false,
-                                phase = TikNetConnPhase.Disconnected,
-                                busy = false,
-                                error = "سروری آماده نیست",
-                            )
-                        }
-                    }
-                }
+            val ctx = getApplication<Application>()
+            if (TikNetPingCache.isFresh(ctx)) {
+                connectSmartFromCache()
+            } else {
+                startSmartPingThenConnect()
             }
         } else {
             if (!ensureServerSelected()) {
