@@ -35,14 +35,15 @@ class TikNetMainActivity : HelperBaseComponentActivity() {
         }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        ThemeManager.setThemeMode("2")
+        super.onCreate(savedInstanceState)
+        // Must call super.onCreate before finish()/return or Android throws SuperNotCalledException.
         if (!TikNetPrefs.isLoggedIn(this)) {
             startActivity(Intent(this, TikNetLoginActivity::class.java))
             finish()
             return
         }
         TikNetBootstrap.applyDefaults(this)
-        ThemeManager.setThemeMode("2")
-        super.onCreate(savedInstanceState)
         checkAndRequestPermission(PermissionType.POST_NOTIFICATIONS) {}
     }
 

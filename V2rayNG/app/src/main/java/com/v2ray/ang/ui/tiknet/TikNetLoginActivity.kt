@@ -100,14 +100,13 @@ class TikNetLoginActivity : HelperBaseComponentActivity() {
     private val pendingLinkState = mutableStateOf<String?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        if (TikNetPrefs.isLoggedIn(this)) {
-            goMain()
-            finish()
-            return
-        }
         ThemeManager.setThemeMode("2")
         pendingLinkState.value = extractLink(intent)
         super.onCreate(savedInstanceState)
+        // Must call super.onCreate before finish()/return or Android throws SuperNotCalledException.
+        if (TikNetPrefs.isLoggedIn(this)) {
+            goMain()
+        }
     }
 
     override fun onNewIntent(intent: Intent) {
