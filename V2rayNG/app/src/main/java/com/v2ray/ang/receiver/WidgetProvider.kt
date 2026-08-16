@@ -48,10 +48,13 @@ class WidgetProvider : AppWidgetProvider() {
         if (isRunning) {
             remoteViews.setInt(R.id.image_switch, "setImageResource", R.drawable.ic_stop_24dp)
             remoteViews.setInt(R.id.layout_background, "setBackgroundResource", R.drawable.ic_rounded_corner_active)
+            remoteViews.setTextViewText(R.id.tv_widget_status, context.getString(R.string.tiknet_widget_status_on))
         } else {
             remoteViews.setInt(R.id.image_switch, "setImageResource", R.drawable.ic_play_24dp)
             remoteViews.setInt(R.id.layout_background, "setBackgroundResource", R.drawable.ic_rounded_corner_inactive)
+            remoteViews.setTextViewText(R.id.tv_widget_status, context.getString(R.string.tiknet_widget_status_off))
         }
+        remoteViews.setTextViewText(R.id.tv_widget_title, context.getString(R.string.app_name))
 
         for (appWidgetId in appWidgetIds) {
             appWidgetManager.updateAppWidget(appWidgetId, remoteViews)

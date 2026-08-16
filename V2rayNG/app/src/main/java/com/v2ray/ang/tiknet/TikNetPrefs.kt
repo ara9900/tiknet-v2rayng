@@ -16,6 +16,7 @@ object TikNetPrefs {
     const val TIKNET_SUB_GUID = "tiknet-personal"
     private const val KEY_DEVICE_ID = "device_id"
     private const val KEY_ENTITLEMENT_NOTIF_PREFIX = "entitlement_notif_"
+    private const val KEY_PINNED_SERVERS = "pinned_server_guids"
 
     private fun prefs(ctx: Context): SharedPreferences =
         ctx.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -113,5 +114,22 @@ object TikNetPrefs {
 
     fun saveEntitlementNotifDay(ctx: Context, kind: String, dayKey: String) {
         prefs(ctx).edit().putString(KEY_ENTITLEMENT_NOTIF_PREFIX + kind, dayKey).apply()
+    }
+
+    fun getPinnedServers(ctx: Context): Set<String> {
+        val raw = prefs(ctx).getString(KEY_PINNED_SERVERS, null) ?: return emptySet()
+        return raw.split(',')
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .toSet()
+    }
+
+    fun togglePinnedServer(ctx: Context, guid: String): Set<String> {
+        val cur = getPinnedServers(ctx).toMutableSet()
+        if (!cur.add(guid)) cur.remove(guid)
+        prefs(ctx).edit()
+            .putString(KEY_PINNED_SERVERS, cur.joinToString(","))
+            .apply()
+        return cur
     }
 }

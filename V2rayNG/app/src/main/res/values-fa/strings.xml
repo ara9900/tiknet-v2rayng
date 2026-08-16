@@ -1,7 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name" translatable="false">TikNet</string>
-    <string name="app_widget_name">تعویض</string>
+    <string name="app_widget_name">اتصال تیک‌نت</string>
+    <string name="tiknet_widget_status_on">متصل</string>
+    <string name="tiknet_widget_status_off">قطع</string>
     <string name="app_tile_name">تعویض</string>
     <string name="app_tile_first_use">برای اولین استفاده از این قابلیت، لطفاً ابتدا از داخل برنامه یک سرور اضافه کنید</string>
     <string name="navigation_drawer_open">باز کردن منو کشویی</string>

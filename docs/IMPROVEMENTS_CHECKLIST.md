@@ -23,3 +23,9 @@
 - [x] Internet troubleshoot (existing) + panel health check
 - [x] Expiry / low-traffic banner + daily local notification
 - [x] Device register on login / app start
+
+## P6 Completeness (4.3.15)
+- [x] Offline account badge when using cached `/me`
+- [x] One-click support with ticket clipboard
+- [x] Pin favorite servers in picker
+- [x] Home widget status label (connect/disconnect)

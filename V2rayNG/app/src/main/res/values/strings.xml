@@ -19,7 +19,9 @@
     <string name="tiknet_catalog_imported">%1$d کانفیگ از «%2$s» وارد شد</string>
     <string name="tiknet_account_load_failed">خواندن حساب ناموفق: %1$s</string>
     <string name="tiknet_menu_account">حساب TikNet</string>
-    <string name="app_widget_name">Switch</string>
+    <string name="app_widget_name">TikNet Connect</string>
+    <string name="tiknet_widget_status_on">Connected</string>
+    <string name="tiknet_widget_status_off">Disconnected</string>
     <string name="app_tile_name">Switch</string>
     <string name="app_tile_first_use">Add a profile in the app before using this feature.</string>
     <string name="navigation_drawer_open">Open navigation drawer</string>

@@ -114,6 +114,9 @@ data class TikNetMainUiState(
     val referralError: String? = null,
     val referralDisabled: Boolean = false,
     val referralAttaching: Boolean = false,
+    /** True when showing cached profile because panel /me failed. */
+    val profileOffline: Boolean = false,
+    val pinnedServers: Set<String> = emptySet(),
 ) {
     val isUpdateBlocking: Boolean
         get() = when (val update = appUpdate) {
@@ -156,7 +159,16 @@ class TikNetMainViewModel(
                 ?.let { TikNetUserInfo(username = it) }
         if (cachedOrUsername != null) {
             val alert = TikNetEntitlementAlerts.evaluate(cachedOrUsername)
-            _ui.update { it.copy(user = cachedOrUsername, userLoading = false, entitlementAlert = alert) }
+            _ui.update {
+                it.copy(
+                    user = cachedOrUsername,
+                    userLoading = false,
+                    entitlementAlert = alert,
+                    pinnedServers = TikNetPrefs.getPinnedServers(application),
+                )
+            }
+        } else {
+            _ui.update { it.copy(pinnedServers = TikNetPrefs.getPinnedServers(application)) }
         }
         refreshServers()
         observeService()
@@ -401,14 +413,19 @@ class TikNetMainViewModel(
                 pingMs = ping,
             )
         }
-        val sorted = items.sortedWith(compareBy<TikNetServerItem> {
-            val p = it.pingMs
-            if (p == null || p <= 0 || p >= 65000) Long.MAX_VALUE else p
-        })
+        val pinned = TikNetPrefs.getPinnedServers(getApplication())
+        val sorted = items.sortedWith(
+            compareByDescending<TikNetServerItem> { pinned.contains(it.guid) }
+                .thenBy {
+                    val p = it.pingMs
+                    if (p == null || p <= 0 || p >= 65000) Long.MAX_VALUE else p
+                },
+        )
         val selectedItem = sorted.firstOrNull { it.guid == selected }
         _ui.update {
             it.copy(
                 servers = sorted,
+                pinnedServers = pinned,
                 selectedGuid = selectedItem?.guid ?: selected,
                 selectedTitle = when {
                     it.smartMode && selectedItem == null -> "اتصال هوشمند"
@@ -417,6 +434,12 @@ class TikNetMainViewModel(
                 },
             )
         }
+    }
+
+    fun togglePinnedServer(guid: String) {
+        val pinned = TikNetPrefs.togglePinnedServer(getApplication(), guid)
+        _ui.update { it.copy(pinnedServers = pinned) }
+        refreshServers()
     }
 
     private fun refreshSelected() {
@@ -604,6 +627,7 @@ class TikNetMainViewModel(
                         busy = false,
                         userLoading = false,
                         error = null,
+                        profileOffline = false,
                         telegramSupport = supportTg ?: me.supportTelegram,
                         shopUrl = if (publicCfg?.shopEnabled == true) publicCfg.shopUrl else null,
                         shopLabel = publicCfg?.shopLabel,
@@ -623,6 +647,7 @@ class TikNetMainViewModel(
                         user = fallback,
                         busy = false,
                         userLoading = false,
+                        profileOffline = fallback != null,
                         telegramSupport = cached?.supportTelegram ?: it.telegramSupport,
                         error = if (!silent) TikNetErrors.message(e, "خطا در دریافت اطلاعات حساب") else it.error,
                         entitlementAlert = alert,
@@ -1007,6 +1032,10 @@ class TikNetMainViewModel(
 
     fun clearSyncMessage() {
         _ui.update { it.copy(syncMessage = null) }
+    }
+
+    fun showMessage(message: String) {
+        _ui.update { it.copy(syncMessage = message) }
     }
 
     override fun onCleared() {

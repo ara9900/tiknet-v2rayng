@@ -44,6 +44,13 @@ import androidx.compose.material.icons.outlined.Analytics
 import androidx.compose.material.icons.outlined.Apps
 import androidx.compose.material.icons.outlined.ArrowDownward
 import androidx.compose.material.icons.outlined.ArrowUpward
+import androidx.compose.material.icons.outlined.PushPin
+import androidx.compose.material.icons.outlined.ContentCopy
+import androidx.compose.material.icons.outlined.CloudOff
+import android.os.Build
+import com.v2ray.ang.BuildConfig
+import com.v2ray.ang.tiknet.TikNetDevice
+import com.v2ray.ang.tiknet.TikNetPrefs
 import androidx.compose.material.icons.outlined.Campaign
 import androidx.compose.material.icons.outlined.CardGiftcard
 import androidx.compose.material.icons.outlined.ContentCopy
@@ -260,6 +267,7 @@ fun TikNetShell(
                             },
                             onReloadReferral = { viewModel.loadReferral(force = true) },
                             onAttachReferral = { viewModel.attachReferralCode(it) },
+                            onSupportCopied = { viewModel.showMessage("اطلاعات پشتیبانی کپی شد") },
                         )
                     }
                 }
@@ -298,6 +306,7 @@ fun TikNetShell(
                         onSelectServer(guid)
                         showServerSheet = false
                     },
+                    onTogglePin = { viewModel.togglePinnedServer(it) },
                     onPingAll = onPingAll,
                     onClose = { showServerSheet = false },
                 )
@@ -997,6 +1006,7 @@ private fun ServerPickerSheet(
     state: TikNetMainUiState,
     onSmartMode: () -> Unit,
     onSelectServer: (String) -> Unit,
+    onTogglePin: (String) -> Unit,
     onPingAll: () -> Unit,
     onClose: () -> Unit,
 ) {
@@ -1060,7 +1070,9 @@ private fun ServerPickerSheet(
                     subtitle = server.protocolLabel,
                     selected = !state.smartMode && state.selectedGuid == server.guid,
                     pingMs = server.pingMs,
+                    pinned = state.pinnedServers.contains(server.guid),
                     onClick = { onSelectServer(server.guid) },
+                    onTogglePin = { onTogglePin(server.guid) },
                 )
             }
             if (state.servers.isEmpty()) {
@@ -1086,6 +1098,8 @@ private fun ServerRow(
     pingMs: Long?,
     onClick: () -> Unit,
     highlight: Boolean = false,
+    pinned: Boolean = false,
+    onTogglePin: (() -> Unit)? = null,
 ) {
     val border = when {
         selected -> TikPrimary
@@ -1113,10 +1127,29 @@ private fun ServerRow(
         }
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
-            Text(title, color = TikOnBg, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(title, color = TikOnBg, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                if (pinned) {
+                    Spacer(Modifier.width(6.dp))
+                    Icon(Icons.Outlined.PushPin, contentDescription = null, tint = TikWarn, modifier = Modifier.size(14.dp))
+                }
+            }
             if (subtitle.isNotBlank()) {
                 Spacer(Modifier.height(2.dp))
                 Text(subtitle, color = TikMuted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        }
+        if (onTogglePin != null) {
+            IconButton(
+                onClick = onTogglePin,
+                modifier = Modifier.size(36.dp),
+            ) {
+                Icon(
+                    Icons.Outlined.PushPin,
+                    contentDescription = if (pinned) "برداشتن پین" else "پین سرور",
+                    tint = if (pinned) TikWarn else TikMuted,
+                    modifier = Modifier.size(18.dp),
+                )
             }
         }
         if (pingMs != null) {
@@ -1766,6 +1799,7 @@ private fun AccountTab(
     onOpenDiagnostics: () -> Unit,
     onReloadReferral: () -> Unit,
     onAttachReferral: (String) -> Unit,
+    onSupportCopied: () -> Unit = {},
 ) {
     val user = state.user
     val expired = user?.isExpired == true
@@ -1821,12 +1855,17 @@ private fun AccountTab(
                     Text("@${user!!.username}", color = TikMuted, fontSize = 13.sp)
                 }
                 Spacer(Modifier.height(10.dp))
-                StatusBadge(
-                    expired = expired,
-                    active = active,
-                    hasSub = hasSub,
-                    loading = state.userLoading && user == null,
-                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    StatusBadge(
+                        expired = expired,
+                        active = active,
+                        hasSub = hasSub,
+                        loading = state.userLoading && user == null,
+                    )
+                    if (state.profileOffline) {
+                        OfflineBadge()
+                    }
+                }
             }
         }
 
@@ -1916,11 +1955,28 @@ private fun AccountTab(
                     Text(state.shopLabel?.takeIf { it.isNotBlank() } ?: "خرید و تمدید")
                 }
             }
+            val clipboard = LocalClipboardManager.current
+            val context = LocalContext.current
+            fun supportTicketText(): String {
+                val u = state.user?.username ?: TikNetPrefs.getUsername(context) ?: "—"
+                val device = runCatching { TikNetDevice.getOrCreateDeviceId(context).take(8) }.getOrDefault("—")
+                return buildString {
+                    appendLine("TikNet پشتیبانی")
+                    appendLine("user: @$u")
+                    appendLine("version: ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
+                    appendLine("android: ${Build.VERSION.RELEASE} / SDK ${Build.VERSION.SDK_INT}")
+                    appendLine("model: ${Build.MANUFACTURER} ${Build.MODEL}")
+                    appendLine("device: $device")
+                    if (state.profileOffline) appendLine("profile: offline-cache")
+                }.trim()
+            }
             val tg = state.telegramSupport
             if (!tg.isNullOrBlank()) {
                 Spacer(Modifier.height(12.dp))
                 OutlinedButton(
                     onClick = {
+                        clipboard.setText(AnnotatedString(supportTicketText()))
+                        onSupportCopied()
                         val url = when {
                             tg.startsWith("http") -> tg
                             tg.startsWith("tg:") -> tg
@@ -1938,7 +1994,7 @@ private fun AccountTab(
                 ) {
                     Icon(Icons.Outlined.Chat, contentDescription = null)
                     Spacer(Modifier.width(8.dp))
-                    Text("پشتیبانی")
+                    Text("پشتیبانی (با کپی مشخصات)")
                 }
             }
 
@@ -1964,6 +2020,11 @@ private fun AccountTab(
                 ServiceTile(Icons.Outlined.HelpOutline, "راهنما و سوالات", onOpenFaq)
                 HorizontalDivider(color = TikBorder, modifier = Modifier.padding(start = 56.dp))
                 ServiceTile(Icons.Outlined.Troubleshoot, "عیب‌یابی اینترنت گوشی", onOpenDiagnostics)
+                HorizontalDivider(color = TikBorder, modifier = Modifier.padding(start = 56.dp))
+                ServiceTile(Icons.Outlined.ContentCopy, "کپی اطلاعات پشتیبانی") {
+                    clipboard.setText(AnnotatedString(supportTicketText()))
+                    onSupportCopied()
+                }
             }
 
             Spacer(Modifier.height(20.dp))
@@ -2211,6 +2272,22 @@ private fun ReferralProgressBox(info: TikNetReferralInfo) {
         )
         Spacer(Modifier.height(10.dp))
         Text(caption, color = TikPrimary, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+    }
+}
+
+@Composable
+private fun OfflineBadge() {
+    Row(
+        Modifier
+            .clip(RoundedCornerShape(20.dp))
+            .background(TikMuted.copy(alpha = 0.15f))
+            .border(1.dp, TikMuted.copy(alpha = 0.5f), RoundedCornerShape(20.dp))
+            .padding(horizontal = 10.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(Icons.Outlined.CloudOff, contentDescription = null, tint = TikMuted, modifier = Modifier.size(16.dp))
+        Spacer(Modifier.width(4.dp))
+        Text("آفلاین", color = TikMuted, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
     }
 }
 
