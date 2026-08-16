@@ -94,15 +94,37 @@ object Utils {
     private fun tryDecodeBase64(text: String?): String? {
         if (text.isNullOrEmpty()) return null
 
-        try {
-            return Base64.decode(text, Base64.NO_WRAP).toString(Charsets.UTF_8)
-        } catch (e: Exception) {
-            LogUtil.e(AppConfig.TAG, "Failed to decode standard base64", e)
+        val trimmed = text.trim()
+        if (trimmed.isEmpty()) return null
+
+        if (trimmed.contains("://") ||
+            trimmed.startsWith("{") ||
+            trimmed.startsWith("[") ||
+            (trimmed.contains('\n') && listOf("vless://", "vmess://", "ss://", "trojan://", "wireguard://", "hy2://").any { trimmed.contains(it) })
+        ) {
+            return null
         }
-        try {
-            return Base64.decode(text, Base64.NO_WRAP.or(Base64.URL_SAFE)).toString(Charsets.UTF_8)
-        } catch (e: Exception) {
-            LogUtil.e(AppConfig.TAG, "Failed to decode URL-safe base64", e)
+
+        val compact = trimmed.replace(Regex("\\s+"), "")
+        if (compact.isEmpty() ||
+            !compact.all { it.isLetterOrDigit() || it == '+' || it == '/' || it == '=' || it == '-' || it == '_' }
+        ) {
+            return null
+        }
+
+        fun pad(value: String): String {
+            val mod = value.length % 4
+            return if (mod == 0) value else value + "=".repeat(4 - mod)
+        }
+
+        val candidates = listOf(pad(compact), pad(compact.trimEnd('='))).distinct()
+        for (candidate in candidates) {
+            runCatching {
+                return String(Base64.decode(candidate, Base64.DEFAULT), Charsets.UTF_8)
+            }
+            runCatching {
+                return String(Base64.decode(candidate, Base64.NO_WRAP.or(Base64.URL_SAFE)), Charsets.UTF_8)
+            }
         }
         return null
     }

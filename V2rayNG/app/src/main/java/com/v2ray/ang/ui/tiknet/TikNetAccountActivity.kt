@@ -11,6 +11,7 @@ import androidx.lifecycle.lifecycleScope
 import com.v2ray.ang.R
 import com.v2ray.ang.tiknet.TikNetApi
 import com.v2ray.ang.tiknet.TikNetCatalogServer
+import com.v2ray.ang.tiknet.TikNetErrors
 import com.v2ray.ang.tiknet.TikNetPrefs
 import com.v2ray.ang.tiknet.TikNetSync
 import androidx.appcompat.app.AppCompatActivity
@@ -56,7 +57,7 @@ class TikNetAccountActivity : AppCompatActivity() {
                     appendLine("پنل: $base")
                 }
             } catch (e: Exception) {
-                info.text = getString(R.string.tiknet_account_load_failed, e.message ?: "")
+                info.text = getString(R.string.tiknet_account_load_failed, TikNetErrors.message(e))
             } finally {
                 setBusy(false)
             }
@@ -72,7 +73,7 @@ class TikNetAccountActivity : AppCompatActivity() {
                     }
                     status.text = getString(R.string.tiknet_sync_ok, n)
                 } catch (e: Exception) {
-                    status.text = e.message ?: getString(R.string.tiknet_sync_failed)
+                    status.text = TikNetErrors.message(e, getString(R.string.tiknet_sync_failed))
                 } finally {
                     setBusy(false)
                 }
@@ -94,7 +95,7 @@ class TikNetAccountActivity : AppCompatActivity() {
                     showCatalogPicker(servers, status)
                 } catch (e: Exception) {
                     setBusy(false)
-                    status.text = e.message
+                    status.text = TikNetErrors.message(e)
                 }
             }
         }

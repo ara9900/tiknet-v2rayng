@@ -1,5 +1,6 @@
 package com.v2ray.ang.ui.tiknet
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
@@ -10,6 +11,7 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -29,6 +31,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -124,12 +127,14 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.DialogProperties
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.v2ray.ang.R
 import com.v2ray.ang.dto.AppInfo
 import com.v2ray.ang.util.AppIconFetcher
 import com.v2ray.ang.tiknet.TikNetAnnouncement
+import com.v2ray.ang.tiknet.TikNetAppUpdateState
 import com.v2ray.ang.tiknet.TikNetDiagItem
 import com.v2ray.ang.tiknet.TikNetDiagStatus
 import com.v2ray.ang.tiknet.TikNetFaqItem
@@ -179,6 +184,8 @@ fun TikNetShell(
         snackbar.showSnackbar(msg)
         viewModel.clearSyncMessage()
     }
+
+    BackHandler(enabled = state.isUpdateBlocking) { }
 
     // Force Latin digits (0-9): Persian locale fonts otherwise reshape ASCII digits to ۰-۹ and they look tiny.
     val latinDigitStyle = LocalTextStyle.current.copy(localeList = LocaleList(Locale("en")))
@@ -237,6 +244,7 @@ fun TikNetShell(
                     )
                 }
             }
+
         }
 
         if (state.showSplash) {
@@ -356,7 +364,98 @@ fun TikNetShell(
                 },
             )
         }
+
+        AppUpdateOverlay(
+            updateState = state.appUpdate,
+            onDismiss = { viewModel.dismissOptionalUpdate() },
+            onDownloadAndInstall = { viewModel.downloadAndInstallUpdate() },
+        )
     }
+}
+
+@Composable
+private fun AppUpdateOverlay(
+    updateState: TikNetAppUpdateState,
+    onDismiss: () -> Unit,
+    onDownloadAndInstall: () -> Unit,
+) {
+    val info = when (updateState) {
+        is TikNetAppUpdateState.Available -> updateState.info
+        is TikNetAppUpdateState.Downloading -> updateState.info
+        is TikNetAppUpdateState.Error -> updateState.info
+        else -> null
+    } ?: return
+
+    val force = info.force
+    val title = if (force) "بروزرسانی اجباری" else "نسخه جدید"
+    val buttonLabel = when (updateState) {
+        is TikNetAppUpdateState.Error -> "تلاش دوباره"
+        is TikNetAppUpdateState.Downloading -> "در حال دانلود…"
+        else -> "دانلود و نصب"
+    }
+
+    AlertDialog(
+        onDismissRequest = { if (!force) onDismiss() },
+        properties = DialogProperties(
+            dismissOnBackPress = !force,
+            dismissOnClickOutside = !force,
+        ),
+        containerColor = TikSurface,
+        titleContentColor = TikOnBg,
+        textContentColor = TikMuted,
+        title = { Text(title) },
+        text = {
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+            ) {
+                Text(
+                    "نسخه ${info.versionName.ifBlank { TikNetJalali.toPersianDigits(info.versionCode.toString()) }}",
+                    color = TikOnBg,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                if (info.changelog.isNotBlank()) {
+                    Spacer(Modifier.height(10.dp))
+                    Text(info.changelog, color = TikMuted, lineHeight = 20.sp)
+                }
+                if (updateState is TikNetAppUpdateState.Downloading) {
+                    Spacer(Modifier.height(14.dp))
+                    LinearProgressIndicator(
+                        progress = { updateState.progress / 100f },
+                        modifier = Modifier.fillMaxWidth(),
+                        color = TikPrimary,
+                        trackColor = TikBorder,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "در حال دانلود: ${TikNetJalali.toPersianDigits(updateState.progress.toString())}%",
+                        color = TikMuted,
+                        fontSize = 13.sp,
+                    )
+                }
+                if (updateState is TikNetAppUpdateState.Error) {
+                    Spacer(Modifier.height(10.dp))
+                    Text(updateState.message, color = TikDanger)
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = onDownloadAndInstall,
+                enabled = updateState !is TikNetAppUpdateState.Downloading,
+            ) {
+                Text(buttonLabel, color = TikPrimary)
+            }
+        },
+        dismissButton = {
+            if (!force) {
+                TextButton(onClick = onDismiss) {
+                    Text("بعداً", color = TikMuted)
+                }
+            }
+        },
+    )
 }
 
 @Composable
@@ -1287,9 +1386,35 @@ private fun FilterTab(
                     onValueChange = { viewModel.setFilterQuery(it) },
                     hint = "جستجو بین اپ‌ها",
                 )
+                if (state.filterEnabled) {
+                    val pinned = remember(state.filterApps, state.filterSelected) {
+                        state.filterApps.filter { state.filterSelected.contains(it.packageName) }
+                    }
+                    if (pinned.isNotEmpty()) {
+                        Spacer(Modifier.height(12.dp))
+                        Text(
+                            "اپ‌های روشن‌شده (${TikNetJalali.toPersianDigits(pinned.size.toString())})",
+                            color = TikOnBg,
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 13.sp,
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            items(pinned, key = { "pin-${it.packageName}" }) { app ->
+                                AppFilterPinnedChip(
+                                    app = app,
+                                    onClick = {
+                                        viewModel.toggleFilterApp(app.packageName)
+                                        onFilterChangedRestart()
+                                    },
+                                )
+                            }
+                        }
+                    }
+                }
             }
 
-            val apps = remember(state.filterApps, state.filterQuery, state.filterSelected) {
+            val apps = remember(state.filterApps, state.filterQuery, state.filterSelected, state.filterEnabled) {
                 viewModel.filteredApps()
             }
 
@@ -1479,6 +1604,47 @@ private fun SearchField(value: String, onValueChange: (String) -> Unit, hint: St
 }
 
 @Composable
+private fun AppFilterPinnedChip(app: AppInfo, onClick: () -> Unit) {
+    val context = LocalContext.current
+    val iconRequest = remember(app.packageName) {
+        ImageRequest.Builder(context)
+            .data("appicon:${app.packageName}")
+            .fetcherFactory(AppIconFetcher.Factory(context))
+            .build()
+    }
+    Row(
+        Modifier
+            .width(140.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .background(TikSurface)
+            .border(1.dp, TikPrimary.copy(alpha = 0.35f), RoundedCornerShape(14.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        AsyncImage(
+            model = iconRequest,
+            contentDescription = app.appName,
+            modifier = Modifier
+                .size(32.dp)
+                .clip(RoundedCornerShape(8.dp)),
+            contentScale = ContentScale.Fit,
+            error = painterResource(R.drawable.ic_image_24dp),
+            fallback = painterResource(R.drawable.ic_image_24dp),
+        )
+        Spacer(Modifier.width(8.dp))
+        Text(
+            app.appName,
+            color = TikOnBg,
+            fontSize = 12.sp,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+    }
+}
+
+@Composable
 private fun AppFilterRow(
     app: AppInfo,
     checked: Boolean,
@@ -1543,8 +1709,9 @@ private fun AccountTab(
     onOpenDiagnostics: () -> Unit,
 ) {
     val user = state.user
-    val expired = user?.isExpired == true || (user?.hasSubscription == false)
-    val active = user != null && user.hasSubscription && user.isExpired != true
+    val expired = user?.isExpired == true
+    val hasSub = user?.hasSubscription == true
+    val active = user != null && hasSub && user.isExpired != true
 
     Column(
         Modifier
@@ -1598,7 +1765,7 @@ private fun AccountTab(
                 StatusBadge(
                     expired = expired,
                     active = active,
-                    hasSub = user?.hasSubscription == true,
+                    hasSub = hasSub,
                     loading = state.userLoading && user == null,
                 )
             }
@@ -1637,6 +1804,7 @@ private fun AccountTab(
                     when {
                         expired -> "منقضی"
                         active -> "فعال"
+                        user != null && !hasSub -> "بدون سرویس"
                         else -> "—"
                     },
                 )
@@ -2294,11 +2462,13 @@ private fun TikNetLaunchSplash(onFinished: () -> Unit) {
                         ),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Icon(
-                        Icons.Outlined.Shield,
+                    Image(
+                        painter = painterResource(R.drawable.tiknet_shield),
                         contentDescription = null,
-                        tint = TikPrimary,
-                        modifier = Modifier.size(48.dp),
+                        modifier = Modifier
+                            .size(56.dp)
+                            .padding(6.dp),
+                        contentScale = ContentScale.Fit,
                     )
                 }
             }

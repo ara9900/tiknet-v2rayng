@@ -1,6 +1,8 @@
 package com.v2ray.ang.tiknet
 
 import org.json.JSONObject
+import java.net.URI
+import java.net.URLDecoder
 
 /** Parsed QR / deep-link payload for TikNet login (mirrors Flutter 4.2.77). */
 sealed class TikNetQrLoginPayload
@@ -47,15 +49,15 @@ object TikNetQrLogin {
             }
         }
 
-        val uri = runCatching { android.net.Uri.parse(text) }.getOrNull()
+        val uri = runCatching { URI(text) }.getOrNull()
         if (uri != null && uri.scheme.equals("tiknet", ignoreCase = true)) {
-            val token = (uri.getQueryParameter("token") ?: uri.getQueryParameter("login_token")).orEmpty().trim()
-            val panel = uri.getQueryParameter("panel") ?: uri.getQueryParameter("panel_url")
+            val token = (queryParam(uri, "token") ?: queryParam(uri, "login_token")).orEmpty()
+            val panel = queryParam(uri, "panel") ?: queryParam(uri, "panel_url")
             if (token.isNotEmpty()) {
                 return TikNetQrLoginToken(token = token, panelUrl = panel?.trim()?.takeIf { it.isNotEmpty() })
             }
-            val user = (uri.getQueryParameter("username") ?: uri.getQueryParameter("user")).orEmpty().trim()
-            val pass = uri.getQueryParameter("password") ?: uri.getQueryParameter("pass") ?: ""
+            val user = (queryParam(uri, "username") ?: queryParam(uri, "user")).orEmpty()
+            val pass = (queryParam(uri, "password") ?: queryParam(uri, "pass")).orEmpty()
             if (user.isNotEmpty() && pass.isNotEmpty()) {
                 return TikNetQrCredentials(username = user, password = pass, panelUrl = panel?.trim()?.takeIf { it.isNotEmpty() })
             }
@@ -63,7 +65,7 @@ object TikNetQrLogin {
 
         if (uri != null && (uri.scheme.equals("http", true) || uri.scheme.equals("https", true))) {
             val path = uri.path.orEmpty().lowercase()
-            val token = (uri.getQueryParameter("token") ?: uri.getQueryParameter("login_token")).orEmpty().trim()
+            val token = (queryParam(uri, "token") ?: queryParam(uri, "login_token")).orEmpty().trim()
             if (token.isNotEmpty() && (path.contains("/app/login") || path.endsWith("/login"))) {
                 val panel = buildString {
                     append(uri.scheme).append("://").append(uri.host)
@@ -87,13 +89,25 @@ object TikNetQrLogin {
     }
 
     fun isLoginDeepLink(link: String): Boolean {
-        val uri = runCatching { android.net.Uri.parse(link.trim()) }.getOrNull() ?: return false
+        val uri = runCatching { URI(link.trim()) }.getOrNull() ?: return false
         if (uri.scheme.equals("tiknet", true)) return true
         if (uri.scheme.equals("http", true) || uri.scheme.equals("https", true)) {
             val path = uri.path.orEmpty().lowercase()
-            val token = uri.getQueryParameter("token").orEmpty().trim()
+            val token = queryParam(uri, "token").orEmpty().trim()
             return token.isNotEmpty() && (path.contains("/app/login") || path.endsWith("/login"))
         }
         return false
+    }
+
+    private fun queryParam(uri: URI, key: String): String? {
+        val rawQuery = uri.rawQuery ?: return null
+        val match = rawQuery.split('&')
+            .firstOrNull { part -> part.substringBefore('=') == key }
+            ?: return null
+        val rawValue = match.substringAfter('=', "")
+        if (rawValue.isEmpty()) return ""
+        return runCatching {
+            URLDecoder.decode(rawValue, Charsets.UTF_8.name()).trim()
+        }.getOrDefault(rawValue.trim())
     }
 }

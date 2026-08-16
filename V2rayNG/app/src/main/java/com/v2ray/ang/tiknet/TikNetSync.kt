@@ -8,6 +8,8 @@ import com.v2ray.ang.handler.AngConfigManager
 import com.v2ray.ang.handler.MmkvManager
 
 object TikNetSync {
+    private const val EMPTY_IMPORT_MESSAGE = "هیچ کانفیگی از اشتراک وارد نشد"
+
     /**
      * Download personal subscription from panel and import into v2rayNG profiles
      * under a fixed subscription id so refresh replaces the same set.
@@ -21,6 +23,7 @@ object TikNetSync {
         ensureSubscriptionShell()
         val payload = decodePayload(bytes)
         val (count, _) = AngConfigManager.importBatchConfig(payload, TikNetPrefs.TIKNET_SUB_GUID, append = false)
+        if (count == 0) throw TikNetApiException(EMPTY_IMPORT_MESSAGE)
         val sub = MmkvManager.decodeSubscription(TikNetPrefs.TIKNET_SUB_GUID) ?: SubscriptionItem()
         sub.remarks = "TikNet"
         sub.enabled = true
@@ -43,6 +46,7 @@ object TikNetSync {
         MmkvManager.encodeSubscription(subId, sub)
         val payload = decodePayload(bytes)
         val (count, _) = AngConfigManager.importBatchConfig(payload, subId, append = false)
+        if (count == 0) throw TikNetApiException(EMPTY_IMPORT_MESSAGE)
         return count
     }
 
@@ -72,11 +76,20 @@ object TikNetSync {
         ) {
             return trimmed
         }
-        // Try base64 decode (subscription style).
-        val decoded = runCatching {
-            String(Base64.decode(trimmed, Base64.DEFAULT), StandardCharsets.UTF_8).trim()
-        }.getOrNull()
-        if (!decoded.isNullOrBlank()) return decoded
+        val compact = trimmed.replace(Regex("\\s+"), "")
+        if (compact.isBlank()) return trimmed
+        fun pad(value: String): String {
+            val mod = value.length % 4
+            return if (mod == 0) value else value + "=".repeat(4 - mod)
+        }
+        listOf(
+            runCatching {
+                String(Base64.decode(pad(compact), Base64.DEFAULT), StandardCharsets.UTF_8).trim()
+            }.getOrNull(),
+            runCatching {
+                String(Base64.decode(pad(compact), Base64.NO_WRAP.or(Base64.URL_SAFE)), StandardCharsets.UTF_8).trim()
+            }.getOrNull(),
+        ).firstOrNull { !it.isNullOrBlank() }?.let { return it }
         return trimmed
     }
 }

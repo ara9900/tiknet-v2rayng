@@ -16,11 +16,14 @@ import com.v2ray.ang.handler.SpeedtestManager
 import com.v2ray.ang.helper.MessageHelper
 import com.v2ray.ang.tiknet.TikNetAnnouncement
 import com.v2ray.ang.tiknet.TikNetApi
+import com.v2ray.ang.tiknet.TikNetAppUpdateController
+import com.v2ray.ang.tiknet.TikNetAppUpdateState
 import com.v2ray.ang.tiknet.TikNetBootstrap
 import com.v2ray.ang.tiknet.TikNetDiagItem
 import com.v2ray.ang.tiknet.TikNetDiagnostics
 import com.v2ray.ang.tiknet.TikNetFaqItem
 import com.v2ray.ang.tiknet.TikNetNotificationItem
+import com.v2ray.ang.tiknet.TikNetErrors
 import com.v2ray.ang.tiknet.TikNetPrefs
 import com.v2ray.ang.tiknet.TikNetSync
 import com.v2ray.ang.tiknet.TikNetUserInfo
@@ -99,7 +102,16 @@ data class TikNetMainUiState(
     val shopLabel: String? = null,
     val telegramSupport: String? = null,
     val showSplash: Boolean = true,
-)
+    val appUpdate: TikNetAppUpdateState = TikNetAppUpdateState.Idle,
+) {
+    val isUpdateBlocking: Boolean
+        get() = when (val update = appUpdate) {
+            is TikNetAppUpdateState.Available -> update.info.force
+            is TikNetAppUpdateState.Downloading -> update.info.force
+            is TikNetAppUpdateState.Error -> update.info?.force == true
+            else -> false
+        }
+}
 
 sealed class TikNetUiEvent {
     data object StartVpn : TikNetUiEvent()
@@ -127,8 +139,12 @@ class TikNetMainViewModel(
         // Enable live speed notifications → traffic broadcast for details
         MmkvManager.encodeSettings(AppConfig.PREF_SPEED_ENABLED, true)
         val cached = TikNetPrefs.getCachedProfile(application)
-        if (cached != null) {
-            _ui.update { it.copy(user = cached, userLoading = false) }
+        val cachedOrUsername = cached
+            ?: TikNetPrefs.getUsername(application)
+                ?.takeIf { it.isNotBlank() }
+                ?.let { TikNetUserInfo(username = it) }
+        if (cachedOrUsername != null) {
+            _ui.update { it.copy(user = cachedOrUsername, userLoading = false) }
         }
         refreshServers()
         observeService()
@@ -139,14 +155,8 @@ class TikNetMainViewModel(
         }
         viewModelScope.launch { loadUser(silent = true) }
         viewModelScope.launch { loadAnnouncement() }
+        viewModelScope.launch { checkForAppUpdate() }
         loadUnreadCount()
-        viewModelScope.launch(Dispatchers.IO) {
-            runCatching {
-                val ctx = getApplication<Application>()
-                val base = TikNetPrefs.getBaseUrl(ctx) ?: TikNetApi.resolveBaseUrl(ctx)
-                TikNetApi.getAppUpdate(base)
-            }
-        }
         viewModelScope.launch(Dispatchers.IO) {
             runCatching { TikNetSync.syncPersonalSubscription(getApplication()) }
             withContext(Dispatchers.Main) {
@@ -302,6 +312,59 @@ class TikNetMainViewModel(
     private fun stopUptimeTicker() {
         uptimeJob?.cancel()
         uptimeJob = null
+    }
+
+    fun checkForAppUpdate() {
+        viewModelScope.launch {
+            _ui.update { it.copy(appUpdate = TikNetAppUpdateState.Checking) }
+            val state = withContext(Dispatchers.IO) {
+                TikNetAppUpdateController.check(getApplication())
+            }
+            _ui.update { it.copy(appUpdate = state) }
+        }
+    }
+
+    fun dismissOptionalUpdate() {
+        val update = _ui.value.appUpdate
+        val info = (update as? TikNetAppUpdateState.Available)?.info ?: return
+        if (info.force) return
+        _ui.update { it.copy(appUpdate = TikNetAppUpdateState.UpToDate) }
+    }
+
+    fun downloadAndInstallUpdate() {
+        val current = _ui.value.appUpdate
+        val info = when (current) {
+            is TikNetAppUpdateState.Available -> current.info
+            is TikNetAppUpdateState.Error -> current.info ?: return
+            is TikNetAppUpdateState.Downloading -> return
+            else -> return
+        }
+
+        viewModelScope.launch {
+            _ui.update { it.copy(appUpdate = TikNetAppUpdateState.Downloading(info, 0)) }
+            try {
+                withContext(Dispatchers.IO) {
+                    TikNetAppUpdateController.downloadAndInstall(
+                        ctx = getApplication(),
+                        info = info,
+                    ) { progress ->
+                        _ui.update { state ->
+                            val update = state.appUpdate
+                            if (update is TikNetAppUpdateState.Downloading &&
+                                update.info.versionCode == info.versionCode
+                            ) {
+                                state.copy(appUpdate = TikNetAppUpdateState.Downloading(info, progress))
+                            } else {
+                                state
+                            }
+                        }
+                    }
+                }
+                _ui.update { it.copy(appUpdate = TikNetAppUpdateState.Available(info)) }
+            } catch (e: Exception) {
+                _ui.update { it.copy(appUpdate = TikNetAppUpdateState.Error(TikNetErrors.message(e), info)) }
+            }
+        }
     }
 
     fun refreshServers() {
@@ -488,7 +551,7 @@ class TikNetMainViewModel(
                 _ui.update { it.copy(busy = false, syncMessage = "$n کانفیگ وارد شد") }
             } catch (e: Exception) {
                 _ui.update {
-                    it.copy(busy = false, syncMessage = e.message ?: "همگام‌سازی ناموفق")
+                    it.copy(busy = false, syncMessage = TikNetErrors.message(e, "همگام‌سازی ناموفق"))
                 }
             } finally {
                 // Always refresh account profile, even when subscription import fails.
@@ -514,6 +577,9 @@ class TikNetMainViewModel(
                     runCatching { TikNetApi.getPublicConfig(base) }.getOrNull()
                 }
                 TikNetPrefs.saveCachedProfile(ctx, me)
+                if (TikNetPrefs.getUsername(ctx).isNullOrBlank() && me.username.isNotBlank()) {
+                    TikNetPrefs.saveSession(ctx, base, token, me.username)
+                }
                 _ui.update {
                     it.copy(
                         user = me,
@@ -538,7 +604,7 @@ class TikNetMainViewModel(
                         busy = false,
                         userLoading = false,
                         telegramSupport = cached?.supportTelegram ?: it.telegramSupport,
-                        error = if (!silent) (e.message ?: "خطا در دریافت اطلاعات حساب") else it.error,
+                        error = if (!silent) TikNetErrors.message(e, "خطا در دریافت اطلاعات حساب") else it.error,
                     )
                 }
             }
@@ -626,9 +692,20 @@ class TikNetMainViewModel(
     fun filteredApps(): List<AppInfo> {
         val q = _ui.value.filterQuery.trim()
         val all = _ui.value.filterApps
-        if (q.isEmpty()) return all
-        return all.filter {
-            it.appName.contains(q, ignoreCase = true) || it.packageName.contains(q, ignoreCase = true)
+        val filtered = if (q.isEmpty()) {
+            all
+        } else {
+            all.filter {
+                it.appName.contains(q, ignoreCase = true) || it.packageName.contains(q, ignoreCase = true)
+            }
+        }
+        return if (_ui.value.filterEnabled) {
+            filtered.sortedWith(
+                compareByDescending<AppInfo> { _ui.value.filterSelected.contains(it.packageName) }
+                    .thenBy { it.appName.lowercase() },
+            )
+        } else {
+            filtered
         }
     }
 
@@ -650,7 +727,7 @@ class TikNetMainViewModel(
                 }
             } catch (e: Exception) {
                 _ui.update {
-                    it.copy(notificationsLoading = false, syncMessage = e.message ?: "خطا در اعلان‌ها")
+                    it.copy(notificationsLoading = false, syncMessage = TikNetErrors.message(e, "خطا در اعلان‌ها"))
                 }
             }
         }
@@ -689,7 +766,13 @@ class TikNetMainViewModel(
                 val list = withContext(Dispatchers.IO) { TikNetApi.getFaq(base) }
                 _ui.update { it.copy(faq = list, faqLoading = false) }
             } catch (e: Exception) {
-                _ui.update { it.copy(faqLoading = false, faq = emptyList()) }
+                _ui.update {
+                    it.copy(
+                        faqLoading = false,
+                        faq = emptyList(),
+                        syncMessage = TikNetErrors.message(e, "خطا در راهنما و سوالات"),
+                    )
+                }
             }
         }
     }
@@ -822,7 +905,7 @@ class TikNetMainViewModel(
 
     private fun isTikNetVpnActive(): Boolean {
         return _ui.value.phase == TikNetConnPhase.Connected ||
-            runCatching { CoreServiceManager.isRunning() }.getOrDefault(false)
+            runCatching { CoreServiceManager.isRunning() }.getOrElse { false }
     }
 
     fun logout() {

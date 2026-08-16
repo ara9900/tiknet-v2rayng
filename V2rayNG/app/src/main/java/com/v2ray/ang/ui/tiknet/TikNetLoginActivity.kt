@@ -71,6 +71,8 @@ import androidx.compose.ui.unit.sp
 import com.v2ray.ang.R
 import com.v2ray.ang.tiknet.TikNetApi
 import com.v2ray.ang.tiknet.TikNetApiException
+import com.v2ray.ang.tiknet.TikNetAppUpdateController
+import com.v2ray.ang.tiknet.TikNetErrors
 import com.v2ray.ang.tiknet.TikNetPrefs
 import com.v2ray.ang.tiknet.TikNetPublicConfig
 import com.v2ray.ang.tiknet.TikNetQrCredentials
@@ -171,6 +173,13 @@ private fun TikNetLoginScreen(
             }
         }
         runCatching { TikNetSync.syncPersonalSubscription(context) }
+        try {
+            withContext(Dispatchers.IO) {
+                TikNetAppUpdateController.check(context)
+            }
+        } catch (_: Exception) {
+            // Best-effort only; login must continue even if update lookup fails.
+        }
         withContext(Dispatchers.Main) { onLoggedIn() }
     }
 
@@ -181,7 +190,7 @@ private fun TikNetLoginScreen(
             try {
                 withContext(Dispatchers.IO) { block() }
             } catch (e: Exception) {
-                error = e.message ?: "ورود ناموفق"
+                error = TikNetErrors.message(e, "ورود ناموفق")
                 loading = false
             }
         }
