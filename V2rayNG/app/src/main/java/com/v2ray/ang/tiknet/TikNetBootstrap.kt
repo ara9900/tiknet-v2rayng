@@ -41,6 +41,9 @@ object TikNetBootstrap {
     /**
      * Enable/disable Iran domains+IPs and keep LAN/private direct.
      * Off → global proxy preset (still bypasses LAN).
+     *
+     * Applies rulesets synchronously (fast). Geo asset download is optional and
+     * must not block the UI toggle — call [refreshGeoAssets] separately if needed.
      */
     fun setIranDirectRouting(context: Context, enabled: Boolean) {
         TikNetPrefs.setIranDirectEnabled(context, enabled)
@@ -48,14 +51,20 @@ object TikNetBootstrap {
             SettingsManager.resetRoutingRulesetsFromPresets(context, RoutingType.WHITE_IRAN)
             MmkvManager.encodeSettings(PREF_ROUTING_SEEDED, true)
             MmkvManager.encodeSettings(AppConfig.PREF_GEO_FILES_SOURCES, IRAN_GEO_SOURCE)
-            // Force a geo refresh attempt so category-ir / geoip:ir work.
-            MmkvManager.encodeSettings(PREF_GEO_LAST_OK_MS, "0")
-            refreshGeoAssets(context)
             LogUtil.i(AppConfig.TAG, "TikNetBootstrap: Iran direct ON")
         } else {
             SettingsManager.resetRoutingRulesetsFromPresets(context, RoutingType.GLOBAL)
             MmkvManager.encodeSettings(PREF_ROUTING_SEEDED, false)
             LogUtil.i(AppConfig.TAG, "TikNetBootstrap: Iran direct OFF (global + LAN)")
+        }
+    }
+
+    /** True when geosite/geoip look missing or too small for Iran rules. */
+    fun needsGeoAssets(context: Context): Boolean {
+        val extDir = File(Utils.userAssetPath(context))
+        return listOf(AppConfig.GEOSITE_DAT, AppConfig.GEOIP_DAT).any { name ->
+            val f = File(extDir, name)
+            !f.isFile || f.length() < MIN_GEO_BYTES
         }
     }
 

@@ -2320,7 +2320,6 @@ private fun ConnectionSettingsCard(
             Switch(
                 checked = state.iranDirectEnabled,
                 onCheckedChange = onIranDirectChange,
-                enabled = !state.busy,
                 colors = SwitchDefaults.colors(
                     checkedThumbColor = Color.White,
                     checkedTrackColor = TikPrimary,

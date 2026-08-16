@@ -35,9 +35,11 @@ import com.v2ray.ang.tiknet.TikNetUserInfo
 import com.v2ray.ang.ui.main.MainRepository
 import com.v2ray.ang.ui.main.MainServiceEvent
 import com.v2ray.ang.util.AppManagerUtil
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -48,6 +50,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.util.concurrent.atomic.AtomicInteger
 import com.v2ray.ang.core.CoreServiceManager
 
 enum class TikNetConnPhase {
@@ -151,6 +154,9 @@ class TikNetMainViewModel(
     private var pendingSmartSwitch = false
     private var uptimeJob: Job? = null
     private var appsLoaded = false
+    private var iranRoutingJob: Job? = null
+    private val iranRoutingSeq = AtomicInteger(0)
+    private val iranRoutingLock = Any()
 
     init {
         // Enable live speed notifications → traffic broadcast for details
@@ -458,24 +464,79 @@ class TikNetMainViewModel(
     }
 
     fun setIranDirectEnabled(enabled: Boolean) {
-        viewModelScope.launch {
-            _ui.update { it.copy(busy = true, syncMessage = if (enabled) "در حال فعال‌سازی مسیریابی ایران…" else "در حال غیرفعال‌سازی…") }
-            withContext(Dispatchers.IO) {
-                TikNetBootstrap.setIranDirectRouting(getApplication(), enabled)
-            }
-            _ui.update {
-                it.copy(
-                    busy = false,
-                    iranDirectEnabled = enabled,
-                    syncMessage = if (enabled) {
-                        "مسیریابی ایران و لوکال فعال شد"
-                    } else {
-                        "مسیریابی ایران خاموش شد (فقط لوکال مستقیم می‌ماند)"
-                    },
-                )
-            }
-            if (_ui.value.phase == TikNetConnPhase.Connected) {
-                _events.tryEmit(TikNetUiEvent.RestartVpn)
+        val seq = iranRoutingSeq.incrementAndGet()
+        // Optimistic UI — switch must flip immediately.
+        _ui.update {
+            it.copy(
+                iranDirectEnabled = enabled,
+                syncMessage = if (enabled) "در حال اعمال مسیریابی ایران…" else "در حال غیرفعال‌سازی…",
+            )
+        }
+        // Cancel in-flight toggle UI continuation; lock below prevents stale IO overwrite.
+        iranRoutingJob?.cancel()
+        iranRoutingJob = viewModelScope.launch {
+            try {
+                val applied = withContext(Dispatchers.IO) {
+                    synchronized(iranRoutingLock) {
+                        if (seq != iranRoutingSeq.get()) {
+                            return@withContext TikNetPrefs.isIranDirectEnabled(getApplication())
+                        }
+                        TikNetBootstrap.setIranDirectRouting(getApplication(), enabled)
+                        TikNetPrefs.isIranDirectEnabled(getApplication())
+                    }
+                }
+                ensureActive()
+                if (seq != iranRoutingSeq.get()) return@launch
+                _ui.update {
+                    it.copy(
+                        iranDirectEnabled = applied,
+                        syncMessage = if (applied) {
+                            "مسیریابی ایران و لوکال فعال شد"
+                        } else {
+                            "مسیریابی ایران خاموش شد (فقط لوکال مستقیم می‌ماند)"
+                        },
+                    )
+                }
+                if (_ui.value.phase == TikNetConnPhase.Connected) {
+                    _events.tryEmit(TikNetUiEvent.RestartVpn)
+                }
+                if (applied) {
+                    launch(Dispatchers.IO) {
+                        val ctx = getApplication<Application>()
+                        if (TikNetBootstrap.needsGeoAssets(ctx)) {
+                            withContext(Dispatchers.Main) {
+                                if (seq == iranRoutingSeq.get()) {
+                                    _ui.update { it.copy(syncMessage = "در حال دریافت فایل‌های مسیریابی…") }
+                                }
+                            }
+                            TikNetBootstrap.refreshGeoAssets(ctx)
+                            withContext(Dispatchers.Main) {
+                                if (seq == iranRoutingSeq.get() && TikNetPrefs.isIranDirectEnabled(ctx)) {
+                                    _ui.update { it.copy(syncMessage = "فایل‌های مسیریابی آماده شد") }
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                if (seq != iranRoutingSeq.get()) return@launch
+                android.util.Log.e("TikNet", "setIranDirectEnabled failed: ${e.message}", e)
+                val reverted = !enabled
+                withContext(Dispatchers.IO) {
+                    synchronized(iranRoutingLock) {
+                        if (seq == iranRoutingSeq.get()) {
+                            runCatching { TikNetBootstrap.setIranDirectRouting(getApplication(), reverted) }
+                        }
+                    }
+                }
+                _ui.update {
+                    it.copy(
+                        iranDirectEnabled = TikNetPrefs.isIranDirectEnabled(getApplication()),
+                        syncMessage = TikNetErrors.message(e, "تغییر مسیریابی ناموفق بود"),
+                    )
+                }
             }
         }
     }
