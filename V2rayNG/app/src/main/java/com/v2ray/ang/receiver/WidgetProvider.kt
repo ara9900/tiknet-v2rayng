@@ -11,7 +11,6 @@ import android.widget.RemoteViews
 import com.v2ray.ang.AppConfig
 import com.v2ray.ang.R
 import com.v2ray.ang.core.CoreServiceManager
-import com.v2ray.ang.core.LauncherManager
 import com.v2ray.ang.handler.MmkvManager
 import com.v2ray.ang.tiknet.TikNetPrefs
 import com.v2ray.ang.tiknet.TikNetWidgetConnect
@@ -26,10 +25,13 @@ class WidgetProvider : AppWidgetProvider() {
     override fun onReceive(context: Context, intent: Intent) {
         super.onReceive(context, intent)
         when (intent.action) {
-            AppConfig.BROADCAST_ACTION_WIDGET_CLICK -> handleClick(context)
+            AppConfig.BROADCAST_ACTION_WIDGET_CLICK -> {
+                TikNetWidgetConnect.toggleFromWidget(context)
+            }
             AppConfig.BROADCAST_ACTION_ACTIVITY -> {
                 when (intent.getIntExtra("key", 0)) {
                     AppConfig.MSG_STATE_RUNNING, AppConfig.MSG_STATE_START_SUCCESS -> {
+                        TikNetWidgetConnect.clearSmartPending(context)
                         TikNetPrefs.setWidgetConnecting(context, false)
                         refreshAll(context, Phase.Connected)
                     }
@@ -37,8 +39,14 @@ class WidgetProvider : AppWidgetProvider() {
                     AppConfig.MSG_STATE_START_FAILURE,
                     AppConfig.MSG_STATE_STOP_SUCCESS,
                     -> {
+                        TikNetWidgetConnect.clearSmartPending(context)
                         TikNetPrefs.setWidgetConnecting(context, false)
                         refreshAll(context, Phase.Disconnected)
+                    }
+                    AppConfig.MSG_MEASURE_CONFIG_FINISH -> {
+                        if (TikNetPrefs.isWidgetSmartPending(context)) {
+                            TikNetWidgetConnect.onSmartPingFinished(context)
+                        }
                     }
                 }
             }
@@ -49,30 +57,6 @@ class WidgetProvider : AppWidgetProvider() {
                     updateWidgets(context, mgr, ids, resolvePhase(context))
                 }
             }
-        }
-    }
-
-    private fun handleClick(context: Context) {
-        val phase = resolvePhase(context)
-        if (phase == Phase.Connecting) return
-
-        if (phase == Phase.Connected || CoreServiceManager.isRunning()) {
-            TikNetPrefs.setWidgetConnecting(context, false)
-            refreshAll(context, Phase.Disconnected)
-            LauncherManager.stopService(context)
-            return
-        }
-
-        val guid = TikNetWidgetConnect.resolveServerGuid(context)
-        if (!guid.isNullOrBlank()) {
-            MmkvManager.setSelectServer(guid)
-        }
-        TikNetPrefs.setWidgetConnecting(context, true)
-        refreshAll(context, Phase.Connecting)
-        val started = LauncherManager.startServiceFromToggle(context)
-        if (!started) {
-            TikNetPrefs.setWidgetConnecting(context, false)
-            refreshAll(context, Phase.Disconnected)
         }
     }
 

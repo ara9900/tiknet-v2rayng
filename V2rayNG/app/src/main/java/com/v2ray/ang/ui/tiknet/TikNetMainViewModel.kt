@@ -152,6 +152,7 @@ class TikNetMainViewModel(
 
     private var pendingSmartConnect = false
     private var pendingSmartSwitch = false
+    private var lastSmartConnectAtMs = 0L
     private var uptimeJob: Job? = null
     private var appsLoaded = false
     private var iranRoutingJob: Job? = null
@@ -649,6 +650,12 @@ class TikNetMainViewModel(
     fun requestConnect() {
         _ui.update { it.copy(error = null) }
         if (_ui.value.smartMode) {
+            val now = System.currentTimeMillis()
+            // Already pinging / connecting — ignore duplicate starts (user cancels via toggle).
+            if (pendingSmartConnect || _ui.value.smartPicking) return
+            // Short debounce against accidental double-tap after a cancel/reconnect.
+            if (now - lastSmartConnectAtMs < 1_200L) return
+            lastSmartConnectAtMs = now
             _ui.update {
                 it.copy(
                     phase = TikNetConnPhase.Connecting,
@@ -694,13 +701,23 @@ class TikNetMainViewModel(
     fun cancelConnectAttempt() {
         pendingSmartConnect = false
         pendingSmartSwitch = false
+        lastSmartConnectAtMs = System.currentTimeMillis()
+        runCatching {
+            MessageHelper.sendMsg2TestService(
+                getApplication(),
+                TestServiceMessage(key = AppConfig.MSG_MEASURE_CONFIG_CANCEL),
+            )
+        }
         TikNetPrefs.setWidgetConnecting(getApplication(), false)
+        TikNetPrefs.setWidgetSmartPending(getApplication(), false)
+        com.v2ray.ang.tiknet.TikNetWidgetConnect.clearSmartPending(getApplication())
         com.v2ray.ang.receiver.WidgetProvider.requestUpdate(getApplication())
         _ui.update {
             it.copy(
                 phase = TikNetConnPhase.Disconnected,
                 smartPicking = false,
                 busy = false,
+                isPinging = false,
                 error = null,
                 selectedTitle = if (it.smartMode) "اتصال هوشمند" else it.selectedTitle,
             )

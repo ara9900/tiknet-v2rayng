@@ -20,6 +20,7 @@ object TikNetPrefs {
     private const val KEY_WIDGET_MODE = "widget_connect_mode"
     private const val KEY_WIDGET_SERVER = "widget_server_guid"
     private const val KEY_WIDGET_CONNECTING = "widget_connecting"
+    private const val KEY_WIDGET_SMART_PENDING = "widget_smart_pending"
     private const val KEY_IRAN_DIRECT = "iran_direct_routing_enabled"
 
     const val WIDGET_MODE_CURRENT = "current"
@@ -175,6 +176,13 @@ object TikNetPrefs {
 
     fun setWidgetConnecting(ctx: Context, connecting: Boolean) {
         com.v2ray.ang.handler.MmkvManager.encodeSettings(KEY_WIDGET_CONNECTING, connecting)
+    }
+
+    fun isWidgetSmartPending(ctx: Context): Boolean =
+        com.v2ray.ang.handler.MmkvManager.decodeSettingsBool(KEY_WIDGET_SMART_PENDING, false)
+
+    fun setWidgetSmartPending(ctx: Context, pending: Boolean) {
+        com.v2ray.ang.handler.MmkvManager.encodeSettings(KEY_WIDGET_SMART_PENDING, pending)
     }
 
     /** Default true — Iran + LAN direct routing is TikNet's recommended mode. */
