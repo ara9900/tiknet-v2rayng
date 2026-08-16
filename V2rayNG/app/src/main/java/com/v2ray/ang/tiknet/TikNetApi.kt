@@ -115,7 +115,8 @@ object TikNetApi {
     }
 
     /**
-     * GET /me with nested brand.support_telegram parsed via JsonParser when Gson nesting is awkward.
+     * GET /me with tolerant JSON parsing (avoids Gson/Kotlin data-class edge cases)
+     * and nested brand.support_telegram.
      */
     fun enrichMe(baseUrl: String, token: String): Pair<TikNetUserInfo, String?> {
         val req = Request.Builder()
@@ -132,9 +133,10 @@ object TikNetApi {
                 }.getOrNull()
                 throw TikNetApiException(detail ?: "HTTP ${resp.code}", resp.code)
             }
-            val rootEl = JsonParser.parseString(text).asJsonObject
-            val me = gson.fromJson(rootEl, TikNetUserInfo::class.java)
-                ?: throw TikNetApiException("Empty response")
+            if (text.isBlank()) throw TikNetApiException("Empty response")
+            val rootEl = runCatching { JsonParser.parseString(text).asJsonObject }.getOrNull()
+                ?: throw TikNetApiException("Invalid JSON")
+            val me = parseUserInfo(rootEl)
             val brandTg = rootEl.getAsJsonObject("brand")
                 ?.get("support_telegram")
                 ?.asString
@@ -142,13 +144,61 @@ object TikNetApi {
                 ?.takeIf { it.isNotEmpty() }
             val topTg = rootEl.get("support_telegram")?.asString?.trim()?.takeIf { it.isNotEmpty() }
             val supportTg = brandTg ?: topTg ?: me.supportTelegram
-            val shopEnabled = rootEl.get("shop_enabled")?.asBoolean ?: me.shopEnabled
+            val shopEnabled = rootEl.get("shop_enabled")?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isBoolean }?.asBoolean
+                ?: me.shopEnabled
             val enriched = me.copy(
                 supportTelegram = supportTg,
                 shopEnabled = shopEnabled,
             )
             return enriched to supportTg
         }
+    }
+
+    /** Tolerant /me parser — numbers may be int/double; booleans may be missing. */
+    fun parseUserInfo(rootEl: com.google.gson.JsonObject): TikNetUserInfo {
+        fun str(vararg keys: String): String? {
+            for (k in keys) {
+                val v = rootEl.get(k) ?: continue
+                if (v.isJsonNull || !v.isJsonPrimitive) continue
+                val s = v.asString?.trim()
+                if (!s.isNullOrEmpty()) return s
+            }
+            return null
+        }
+        fun bool(vararg keys: String): Boolean? {
+            for (k in keys) {
+                val v = rootEl.get(k) ?: continue
+                if (v.isJsonNull || !v.isJsonPrimitive) continue
+                val p = v.asJsonPrimitive
+                if (p.isBoolean) return p.asBoolean
+            }
+            return null
+        }
+        fun longOrNull(vararg keys: String): Long? {
+            for (k in keys) {
+                val v = rootEl.get(k) ?: continue
+                if (v.isJsonNull || !v.isJsonPrimitive) continue
+                val p = v.asJsonPrimitive
+                if (p.isNumber) return p.asLong
+            }
+            return null
+        }
+        fun intOrNull(vararg keys: String): Int? = longOrNull(*keys)?.toInt()
+
+        return TikNetUserInfo(
+            username = str("username") ?: "",
+            fullName = str("full_name", "fullName"),
+            expireDate = str("expire_date", "expireDate"),
+            hasSubscription = bool("has_subscription", "hasSubscription") ?: false,
+            subscriptionUrl = str("subscription_url", "subscriptionUrl"),
+            planName = str("plan_name", "planName"),
+            isExpired = bool("is_expired", "isExpired"),
+            daysRemaining = intOrNull("days_remaining", "daysRemaining"),
+            trafficUsedBytes = longOrNull("traffic_used_bytes", "trafficUsedBytes"),
+            trafficLimitBytes = longOrNull("traffic_limit_bytes", "trafficLimitBytes"),
+            shopEnabled = bool("shop_enabled", "shopEnabled"),
+            supportTelegram = str("support_telegram", "supportTelegram"),
+        )
     }
 
     /** GET /api/customer/public-config — no auth (shop flags / buy-renew URL). */

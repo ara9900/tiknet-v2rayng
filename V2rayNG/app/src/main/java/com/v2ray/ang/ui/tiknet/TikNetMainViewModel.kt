@@ -67,6 +67,8 @@ data class TikNetMainUiState(
     val user: TikNetUserInfo? = null,
     val busy: Boolean = false,
     val syncMessage: String? = null,
+    /** True until first /me (or cache) attempt finishes — avoids false «بدون سرویس». */
+    val userLoading: Boolean = true,
     val error: String? = null,
     val currentDelayText: String = "",
     val exitIpText: String = "",
@@ -124,6 +126,10 @@ class TikNetMainViewModel(
     init {
         // Enable live speed notifications → traffic broadcast for details
         MmkvManager.encodeSettings(AppConfig.PREF_SPEED_ENABLED, true)
+        val cached = TikNetPrefs.getCachedProfile(application)
+        if (cached != null) {
+            _ui.update { it.copy(user = cached, userLoading = false) }
+        }
         refreshServers()
         observeService()
         MessageHelper.sendMsg2Service(application, AppConfig.MSG_REGISTER_CLIENT, "")
@@ -479,12 +485,14 @@ class TikNetMainViewModel(
                 }
                 refreshServers()
                 pingAllServers()
-                loadUser(silent = true)
                 _ui.update { it.copy(busy = false, syncMessage = "$n کانفیگ وارد شد") }
             } catch (e: Exception) {
                 _ui.update {
                     it.copy(busy = false, syncMessage = e.message ?: "همگام‌سازی ناموفق")
                 }
+            } finally {
+                // Always refresh account profile, even when subscription import fails.
+                loadUser(silent = true)
             }
         }
     }
@@ -494,8 +502,13 @@ class TikNetMainViewModel(
             if (!silent) _ui.update { it.copy(busy = true) }
             try {
                 val ctx = getApplication<Application>()
-                val base = TikNetPrefs.getBaseUrl(ctx) ?: return@launch
-                val token = TikNetPrefs.getAccessToken(ctx) ?: return@launch
+                val base = TikNetPrefs.getBaseUrl(ctx)
+                val token = TikNetPrefs.getAccessToken(ctx)
+                if (base.isNullOrBlank() || token.isNullOrBlank()) {
+                    android.util.Log.w("TikNet", "loadUser: missing base/token")
+                    _ui.update { it.copy(busy = false, userLoading = false) }
+                    return@launch
+                }
                 val (me, supportTg) = withContext(Dispatchers.IO) { TikNetApi.enrichMe(base, token) }
                 val publicCfg = withContext(Dispatchers.IO) {
                     runCatching { TikNetApi.getPublicConfig(base) }.getOrNull()
@@ -505,6 +518,7 @@ class TikNetMainViewModel(
                     it.copy(
                         user = me,
                         busy = false,
+                        userLoading = false,
                         error = null,
                         telegramSupport = supportTg ?: me.supportTelegram,
                         shopUrl = if (publicCfg?.shopEnabled == true) publicCfg.shopUrl else null,
@@ -512,12 +526,19 @@ class TikNetMainViewModel(
                     )
                 }
             } catch (e: Exception) {
+                android.util.Log.e("TikNet", "loadUser failed: ${e.message}", e)
                 val cached = TikNetPrefs.getCachedProfile(getApplication())
+                val uname = TikNetPrefs.getUsername(getApplication())
+                val fallback = cached
+                    ?: _ui.value.user
+                    ?: uname?.takeIf { it.isNotBlank() }?.let { TikNetUserInfo(username = it) }
                 _ui.update {
                     it.copy(
-                        user = cached ?: it.user,
+                        user = fallback,
                         busy = false,
+                        userLoading = false,
                         telegramSupport = cached?.supportTelegram ?: it.telegramSupport,
+                        error = if (!silent) (e.message ?: "خطا در دریافت اطلاعات حساب") else it.error,
                     )
                 }
             }

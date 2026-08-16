@@ -51,6 +51,10 @@ class TikNetLoginActivity : AppCompatActivity() {
                     if (login.accessToken.isBlank()) throw TikNetApiException("empty token")
                     TikNetPrefs.saveSession(this@TikNetLoginActivity, base, login.accessToken, u)
                     withContext(Dispatchers.IO) {
+                        runCatching {
+                            val (me, _) = TikNetApi.enrichMe(base, login.accessToken)
+                            TikNetPrefs.saveCachedProfile(this@TikNetLoginActivity, me)
+                        }
                         runCatching { TikNetSync.syncPersonalSubscription(this@TikNetLoginActivity) }
                     }
                     goMain()

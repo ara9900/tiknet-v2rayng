@@ -1595,7 +1595,12 @@ private fun AccountTab(
                     Text("@${user!!.username}", color = TikMuted, fontSize = 13.sp)
                 }
                 Spacer(Modifier.height(10.dp))
-                StatusBadge(expired = expired, active = active, hasSub = user?.hasSubscription == true)
+                StatusBadge(
+                    expired = expired,
+                    active = active,
+                    hasSub = user?.hasSubscription == true,
+                    loading = state.userLoading && user == null,
+                )
             }
         }
 
@@ -1755,9 +1760,10 @@ private fun AccountTab(
 }
 
 @Composable
-private fun StatusBadge(expired: Boolean, active: Boolean, hasSub: Boolean) {
+private fun StatusBadge(expired: Boolean, active: Boolean, hasSub: Boolean, loading: Boolean = false) {
     val (color, label, icon) = when {
-        expired -> Triple(TikDanger, "منقضی", Icons.Outlined.ErrorOutline)
+        loading -> Triple(TikMuted, "در حال بارگذاری…", Icons.Outlined.Info)
+        expired && hasSub -> Triple(TikDanger, "منقضی", Icons.Outlined.ErrorOutline)
         !hasSub -> Triple(TikWarn, "بدون سرویس", Icons.Outlined.Info)
         active -> Triple(TikConnected, "فعال", Icons.Outlined.CheckCircle)
         else -> Triple(TikMuted, "—", Icons.Outlined.Info)
