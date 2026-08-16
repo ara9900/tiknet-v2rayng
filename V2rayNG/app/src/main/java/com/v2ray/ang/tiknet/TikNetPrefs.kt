@@ -159,6 +159,7 @@ object TikNetPrefs {
         prefs(ctx).getBoolean(KEY_IRAN_DIRECT, true)
 
     fun setIranDirectEnabled(ctx: Context, enabled: Boolean) {
-        prefs(ctx).edit().putBoolean(KEY_IRAN_DIRECT, enabled).apply()
+        // commit() so a following read cannot see a stale value (apply() is async).
+        prefs(ctx).edit().putBoolean(KEY_IRAN_DIRECT, enabled).commit()
     }
 }
