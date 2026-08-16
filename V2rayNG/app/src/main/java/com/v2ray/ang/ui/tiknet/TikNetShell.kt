@@ -2339,7 +2339,7 @@ private fun ConnectionSettingsCard(
         // Clear break so widget settings read as a separate concern.
         Spacer(Modifier.height(26.dp))
         HorizontalDivider(thickness = 1.dp, color = TikBorder)
-        Spacer(modifier.height(26.dp))
+        Spacer(Modifier.height(26.dp))
 
         Column(
             Modifier
