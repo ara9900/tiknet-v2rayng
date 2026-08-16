@@ -185,7 +185,34 @@ object TikNetDiagnostics {
             settingsAction = "vpn",
         )
 
+        list += panelReachabilityItem(ctx)
+
         return list
+    }
+
+    private fun panelReachabilityItem(ctx: Context): TikNetDiagItem {
+        val base = TikNetPrefs.getBaseUrl(ctx)
+        if (base.isNullOrBlank()) {
+            return TikNetDiagItem(
+                id = "panel",
+                title = "دسترسی به پنل",
+                detail = "آدرس پنل ذخیره نشده است.",
+                status = TikNetDiagStatus.Warn,
+                autoFix = "sync",
+            )
+        }
+        val ok = runCatching { TikNetApi.healthOk(base) }.getOrDefault(false)
+        return TikNetDiagItem(
+            id = "panel",
+            title = "دسترسی به پنل",
+            detail = if (ok) {
+                "پنل در دسترس است."
+            } else {
+                "ارتباط با پنل برقرار نشد. اینترنت یا فیلتر شبکه را بررسی کنید؛ سپس همگام‌سازی را دوباره بزنید."
+            },
+            status = if (ok) TikNetDiagStatus.Ok else TikNetDiagStatus.Fail,
+            autoFix = if (ok) null else "sync",
+        )
     }
 
     /**

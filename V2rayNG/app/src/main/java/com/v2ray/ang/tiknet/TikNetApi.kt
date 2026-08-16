@@ -475,6 +475,79 @@ object TikNetApi {
         }
     }
 
+    fun getReferral(baseUrl: String, token: String): TikNetReferralInfo {
+        val req = Request.Builder()
+            .url("${root(baseUrl)}/api/customer/referral")
+            .get()
+            .header("Authorization", "Bearer $token")
+            .header("Accept", "application/json")
+            .build()
+        client.newCall(req).execute().use { resp ->
+            val text = resp.body?.string().orEmpty()
+            if (!resp.isSuccessful) {
+                val detail = runCatching {
+                    JsonParser.parseString(text).asJsonObject.get("detail")?.asString
+                }.getOrNull()
+                throw TikNetApiException(detail ?: "referral HTTP ${resp.code}", resp.code)
+            }
+            return TikNetReferralParser.parse(text)
+        }
+    }
+
+    fun attachReferral(baseUrl: String, token: String, referralCode: String): TikNetReferralAttachResult {
+        val code = referralCode.trim()
+        val body = gson.toJson(mapOf("referral_code" to code)).toRequestBody(jsonMedia)
+        val req = Request.Builder()
+            .url("${root(baseUrl)}/api/customer/referral/attach")
+            .post(body)
+            .header("Authorization", "Bearer $token")
+            .header("Accept", "application/json")
+            .build()
+        client.newCall(req).execute().use { resp ->
+            val text = resp.body?.string().orEmpty()
+            if (!resp.isSuccessful) {
+                val detail = runCatching {
+                    JsonParser.parseString(text).asJsonObject.get("detail")?.asString
+                }.getOrNull()
+                throw TikNetApiException(detail ?: "referral attach HTTP ${resp.code}", resp.code)
+            }
+            return TikNetReferralParser.parseAttach(text, code)
+        }
+    }
+
+    fun registerDevice(
+        baseUrl: String,
+        token: String,
+        deviceId: String,
+        deviceModel: String = "",
+        appVersion: String = "",
+        versionCode: Int? = null,
+        androidSdk: Int? = null,
+        platform: String = "android",
+    ) {
+        val payload = mutableMapOf<String, Any>(
+            "device_id" to deviceId,
+            "platform" to platform,
+            "device_model" to deviceModel,
+            "app_version" to appVersion,
+        )
+        if (versionCode != null) payload["version_code"] = versionCode
+        if (androidSdk != null) payload["android_sdk"] = androidSdk
+        val body = gson.toJson(payload).toRequestBody(jsonMedia)
+        val req = Request.Builder()
+            .url("${root(baseUrl)}/api/customer/device/register")
+            .post(body)
+            .header("Authorization", "Bearer $token")
+            .header("Accept", "application/json")
+            .build()
+        client.newCall(req).execute().use { resp ->
+            // Soft-fail: older panels may not implement this endpoint.
+            if (!resp.isSuccessful && resp.code != 404 && resp.code != 501) {
+                throw TikNetApiException("device register HTTP ${resp.code}", resp.code)
+            }
+        }
+    }
+
     private fun <T> executeJson(req: Request, clazz: Class<T>): T {
         client.newCall(req).execute().use { resp ->
             val text = resp.body?.string().orEmpty()

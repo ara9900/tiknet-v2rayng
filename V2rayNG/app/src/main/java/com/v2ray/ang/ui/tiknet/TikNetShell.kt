@@ -45,6 +45,21 @@ import androidx.compose.material.icons.outlined.Apps
 import androidx.compose.material.icons.outlined.ArrowDownward
 import androidx.compose.material.icons.outlined.ArrowUpward
 import androidx.compose.material.icons.outlined.Campaign
+import androidx.compose.material.icons.outlined.CardGiftcard
+import androidx.compose.material.icons.outlined.ContentCopy
+import androidx.compose.material.icons.outlined.Share
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.input.ImeAction
+import android.content.Intent
+import com.v2ray.ang.tiknet.TikNetEntitlementAlert
+import com.v2ray.ang.tiknet.TikNetEntitlementKind
+import com.v2ray.ang.tiknet.TikNetReferralInfo
+import com.v2ray.ang.tiknet.TikNetReferralUi
 import androidx.compose.material.icons.outlined.Chat
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Close
@@ -225,23 +240,28 @@ fun TikNetShell(
                         viewModel = viewModel,
                         onFilterChangedRestart = onFilterChangedRestart,
                     )
-                    TikNetTab.Account -> AccountTab(
-                        state = state,
-                        onSync = onSync,
-                        onLogoutClick = { showLogout = true },
-                        onOpenNotifications = {
-                            accountSheet = AccountSheet.Notifications
-                            viewModel.loadNotifications()
-                        },
-                        onOpenFaq = {
-                            accountSheet = AccountSheet.Faq
-                            viewModel.loadFaq()
-                        },
-                        onOpenDiagnostics = {
-                            accountSheet = AccountSheet.Diagnostics
-                            viewModel.runDiagnostics()
-                        },
-                    )
+                    TikNetTab.Account -> {
+                        LaunchedEffect(Unit) { viewModel.loadReferral() }
+                        AccountTab(
+                            state = state,
+                            onSync = onSync,
+                            onLogoutClick = { showLogout = true },
+                            onOpenNotifications = {
+                                accountSheet = AccountSheet.Notifications
+                                viewModel.loadNotifications()
+                            },
+                            onOpenFaq = {
+                                accountSheet = AccountSheet.Faq
+                                viewModel.loadFaq()
+                            },
+                            onOpenDiagnostics = {
+                                accountSheet = AccountSheet.Diagnostics
+                                viewModel.runDiagnostics()
+                            },
+                            onReloadReferral = { viewModel.loadReferral(force = true) },
+                            onAttachReferral = { viewModel.attachReferralCode(it) },
+                        )
+                    }
                 }
             }
 
@@ -616,6 +636,10 @@ private fun ConnectTab(
             )
             Spacer(Modifier.height(16.dp))
             AnnouncementBanner(state.announcement)
+            state.entitlementAlert?.let { alert ->
+                Spacer(Modifier.height(12.dp))
+                EntitlementBanner(alert = alert, shopUrl = state.shopUrl)
+            }
             state.error?.takeIf { it.isNotBlank() }?.let { err ->
                 Spacer(Modifier.height(12.dp))
                 AlertGlass(icon = Icons.Outlined.WarningAmber, color = TikDanger, text = err)
@@ -826,6 +850,39 @@ private fun AnnouncementBanner(announcement: TikNetAnnouncement?) {
         else -> TikPrimary
     }
     AlertGlass(icon = Icons.Outlined.Campaign, color = color, text = announcement.text)
+}
+
+@Composable
+private fun EntitlementBanner(alert: TikNetEntitlementAlert, shopUrl: String?) {
+    val uriHandler = LocalUriHandler.current
+    val color = when (alert.kind) {
+        TikNetEntitlementKind.Expired -> TikDanger
+        TikNetEntitlementKind.ExpiringSoon -> if (alert.severe) TikDanger else TikOrange
+        TikNetEntitlementKind.LowTraffic -> TikWarn
+    }
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(color.copy(alpha = 0.12f))
+            .border(1.dp, color.copy(alpha = 0.45f), RoundedCornerShape(14.dp))
+            .padding(14.dp),
+    ) {
+        Row(verticalAlignment = Alignment.Top) {
+            Icon(Icons.Outlined.WarningAmber, contentDescription = null, tint = color)
+            Spacer(Modifier.width(10.dp))
+            Text(alert.message, color = TikOnBg, fontSize = 13.sp, lineHeight = 18.sp, modifier = Modifier.weight(1f))
+        }
+        if (!shopUrl.isNullOrBlank()) {
+            Spacer(Modifier.height(8.dp))
+            TextButton(
+                onClick = { runCatching { uriHandler.openUri(shopUrl) } },
+                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp),
+            ) {
+                Text("خرید و تمدید", color = color, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+            }
+        }
+    }
 }
 
 @Composable
@@ -1707,6 +1764,8 @@ private fun AccountTab(
     onOpenNotifications: () -> Unit,
     onOpenFaq: () -> Unit,
     onOpenDiagnostics: () -> Unit,
+    onReloadReferral: () -> Unit,
+    onAttachReferral: (String) -> Unit,
 ) {
     val user = state.user
     val expired = user?.isExpired == true
@@ -1883,6 +1942,13 @@ private fun AccountTab(
                 }
             }
 
+            Spacer(Modifier.height(20.dp))
+            ReferralSection(
+                state = state,
+                onReload = onReloadReferral,
+                onAttach = onAttachReferral,
+            )
+
             Spacer(Modifier.height(24.dp))
             Text("خدمات", color = TikOnBg, fontWeight = FontWeight.Bold, fontSize = 15.sp)
             Spacer(Modifier.height(8.dp))
@@ -1924,6 +1990,227 @@ private fun AccountTab(
                 modifier = Modifier.fillMaxWidth(),
             )
         }
+    }
+}
+
+@Composable
+private fun ReferralSection(
+    state: TikNetMainUiState,
+    onReload: () -> Unit,
+    onAttach: (String) -> Unit,
+) {
+    if (state.referralDisabled) return
+    val context = LocalContext.current
+    val clipboard = LocalClipboardManager.current
+    var attachCode by remember { mutableStateOf("") }
+
+    Text("معرف", color = TikOnBg, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+    Spacer(Modifier.height(8.dp))
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(TikSurface)
+            .border(1.dp, TikBorder, RoundedCornerShape(14.dp))
+            .padding(16.dp),
+    ) {
+        when {
+            state.referralLoading && state.referral == null -> {
+                Box(Modifier.fillMaxWidth().padding(vertical = 12.dp), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(color = TikPrimary, modifier = Modifier.size(24.dp))
+                }
+            }
+            state.referralError != null && state.referral == null -> {
+                Text(state.referralError ?: "", color = TikMuted, fontSize = 13.sp)
+                Spacer(Modifier.height(8.dp))
+                TextButton(onClick = onReload) {
+                    Icon(Icons.Outlined.Refresh, contentDescription = null, tint = TikPrimary, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("تلاش دوباره", color = TikPrimary)
+                }
+            }
+            else -> {
+                val info = state.referral
+                Text(
+                    "دوستان را دعوت کنید؛ با تکمیل هر مرحله جایزه بگیرید.",
+                    color = TikMuted,
+                    fontSize = 13.sp,
+                )
+                if (info != null && (info.referrerReward.amount > 0 || info.inviteeReward.amount > 0)) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "پاداش شما: ${info.referrerReward.labelFa} · پاداش دوست: ${info.inviteeReward.labelFa}",
+                        color = TikPrimary,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
+                Spacer(Modifier.height(14.dp))
+                Text("کد معرف شما", color = TikMuted, fontSize = 12.sp)
+                Spacer(Modifier.height(6.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(TikSurface2)
+                            .border(1.dp, TikBorder, RoundedCornerShape(12.dp))
+                            .padding(horizontal = 14.dp, vertical = 12.dp),
+                    ) {
+                        Text(
+                            info?.referralCode?.takeIf { it.isNotBlank() } ?: "—",
+                            color = TikOnBg,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 16.sp,
+                        )
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    IconButton(
+                        onClick = {
+                            val code = info?.referralCode.orEmpty()
+                            if (code.isNotBlank()) {
+                                clipboard.setText(AnnotatedString(code))
+                            }
+                        },
+                        enabled = !info?.referralCode.isNullOrBlank(),
+                    ) {
+                        Icon(Icons.Outlined.ContentCopy, contentDescription = "کپی", tint = TikPrimary)
+                    }
+                    IconButton(
+                        onClick = {
+                            val body = info?.let { TikNetReferralUi.shareBody(it) }.orEmpty()
+                            if (body.isBlank()) return@IconButton
+                            val send = Intent(Intent.ACTION_SEND).apply {
+                                type = "text/plain"
+                                putExtra(Intent.EXTRA_SUBJECT, "دعوت به تیک‌نت")
+                                putExtra(Intent.EXTRA_TEXT, body)
+                            }
+                            context.startActivity(Intent.createChooser(send, "اشتراک‌گذاری"))
+                        },
+                        enabled = !info?.referralCode.isNullOrBlank(),
+                    ) {
+                        Icon(Icons.Outlined.Share, contentDescription = "اشتراک‌گذاری", tint = TikPrimary)
+                    }
+                }
+                if (info != null) {
+                    Spacer(Modifier.height(14.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        ReferralStatChip(Modifier.weight(1f), "دعوت‌ها", TikNetJalali.toPersianDigits(info.stats.invitedCount.toString()))
+                        ReferralStatChip(Modifier.weight(1f), "پاداش‌خورده", TikNetJalali.toPersianDigits(info.stats.rewardedCount.toString()))
+                        ReferralStatChip(Modifier.weight(1f), "در انتظار", TikNetJalali.toPersianDigits(info.stats.pendingCount.toString()))
+                    }
+                    Spacer(Modifier.height(14.dp))
+                    ReferralProgressBox(info)
+                    val attached = info.attachedReferrerCode?.trim().orEmpty()
+                    if (attached.isNotEmpty()) {
+                        Spacer(Modifier.height(14.dp))
+                        Text("معرف شما: $attached", color = TikOnBg, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                    } else if (info.canAttachReferrer) {
+                        Spacer(Modifier.height(14.dp))
+                        Text("کد معرف دارید؟", color = TikMuted, fontSize = 12.sp)
+                        Spacer(Modifier.height(6.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            OutlinedTextField(
+                                value = attachCode,
+                                onValueChange = { attachCode = it },
+                                modifier = Modifier.weight(1f),
+                                singleLine = true,
+                                placeholder = { Text("کد معرف", color = TikMuted) },
+                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                                keyboardActions = KeyboardActions(onDone = { onAttach(attachCode) }),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = TikPrimary,
+                                    unfocusedBorderColor = TikBorder,
+                                    focusedTextColor = TikOnBg,
+                                    unfocusedTextColor = TikOnBg,
+                                    cursorColor = TikPrimary,
+                                ),
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Button(
+                                onClick = { onAttach(attachCode) },
+                                enabled = !state.referralAttaching && attachCode.isNotBlank(),
+                                colors = ButtonDefaults.buttonColors(containerColor = TikPrimary, contentColor = Color.White),
+                            ) {
+                                if (state.referralAttaching) {
+                                    CircularProgressIndicator(Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
+                                } else {
+                                    Text("ثبت")
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ReferralStatChip(modifier: Modifier, label: String, value: String) {
+    Column(
+        modifier
+            .clip(RoundedCornerShape(12.dp))
+            .background(TikSurface2)
+            .padding(horizontal = 8.dp, vertical = 10.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(value, color = TikOnBg, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+        Spacer(Modifier.height(2.dp))
+        Text(label, color = TikMuted, fontSize = 11.sp, textAlign = TextAlign.Center)
+    }
+}
+
+@Composable
+private fun ReferralProgressBox(info: TikNetReferralInfo) {
+    if (TikNetReferralUi.completedAll(info)) {
+        val rewarded = info.progress?.rewardedCount ?: info.stats.rewardedCount
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .background(TikConnected.copy(alpha = 0.12f))
+                .border(1.dp, TikConnected.copy(alpha = 0.35f), RoundedCornerShape(12.dp))
+                .padding(12.dp),
+        ) {
+            Text(
+                "همه مراحل دعوت تکمیل شد. تعداد دعوت‌های موفق: ${TikNetJalali.toPersianDigits(rewarded.toString())}",
+                color = TikOnBg,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 13.sp,
+            )
+        }
+        return
+    }
+    val label = TikNetJalali.toPersianDigits(TikNetReferralUi.progressLabel(info))
+    val ratio = TikNetReferralUi.progressRatio(info).toFloat()
+    val caption = TikNetReferralUi.rewardCaption(info)
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(TikSurface2)
+            .border(1.dp, TikBorder, RoundedCornerShape(12.dp))
+            .padding(12.dp),
+    ) {
+        Text(
+            "تعداد کاربر دعوت‌شده با کد شما: $label",
+            color = TikOnBg,
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 13.sp,
+        )
+        Spacer(Modifier.height(10.dp))
+        LinearProgressIndicator(
+            progress = { ratio },
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(10.dp)
+                .clip(RoundedCornerShape(8.dp)),
+            color = TikPrimary,
+            trackColor = TikBorder,
+        )
+        Spacer(Modifier.height(10.dp))
+        Text(caption, color = TikPrimary, fontSize = 12.sp, fontWeight = FontWeight.Medium)
     }
 }
 

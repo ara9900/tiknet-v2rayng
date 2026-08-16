@@ -16,15 +16,20 @@ import com.v2ray.ang.handler.SpeedtestManager
 import com.v2ray.ang.helper.MessageHelper
 import com.v2ray.ang.tiknet.TikNetAnnouncement
 import com.v2ray.ang.tiknet.TikNetApi
+import com.v2ray.ang.tiknet.TikNetApiException
 import com.v2ray.ang.tiknet.TikNetAppUpdateController
 import com.v2ray.ang.tiknet.TikNetAppUpdateState
 import com.v2ray.ang.tiknet.TikNetBootstrap
+import com.v2ray.ang.tiknet.TikNetDevice
 import com.v2ray.ang.tiknet.TikNetDiagItem
 import com.v2ray.ang.tiknet.TikNetDiagnostics
+import com.v2ray.ang.tiknet.TikNetEntitlementAlert
+import com.v2ray.ang.tiknet.TikNetEntitlementAlerts
 import com.v2ray.ang.tiknet.TikNetFaqItem
 import com.v2ray.ang.tiknet.TikNetNotificationItem
 import com.v2ray.ang.tiknet.TikNetErrors
 import com.v2ray.ang.tiknet.TikNetPrefs
+import com.v2ray.ang.tiknet.TikNetReferralInfo
 import com.v2ray.ang.tiknet.TikNetSync
 import com.v2ray.ang.tiknet.TikNetUserInfo
 import com.v2ray.ang.ui.main.MainRepository
@@ -103,6 +108,12 @@ data class TikNetMainUiState(
     val telegramSupport: String? = null,
     val showSplash: Boolean = true,
     val appUpdate: TikNetAppUpdateState = TikNetAppUpdateState.Idle,
+    val entitlementAlert: TikNetEntitlementAlert? = null,
+    val referral: TikNetReferralInfo? = null,
+    val referralLoading: Boolean = false,
+    val referralError: String? = null,
+    val referralDisabled: Boolean = false,
+    val referralAttaching: Boolean = false,
 ) {
     val isUpdateBlocking: Boolean
         get() = when (val update = appUpdate) {
@@ -144,7 +155,8 @@ class TikNetMainViewModel(
                 ?.takeIf { it.isNotBlank() }
                 ?.let { TikNetUserInfo(username = it) }
         if (cachedOrUsername != null) {
-            _ui.update { it.copy(user = cachedOrUsername, userLoading = false) }
+            val alert = TikNetEntitlementAlerts.evaluate(cachedOrUsername)
+            _ui.update { it.copy(user = cachedOrUsername, userLoading = false, entitlementAlert = alert) }
         }
         refreshServers()
         observeService()
@@ -156,6 +168,7 @@ class TikNetMainViewModel(
         viewModelScope.launch { loadUser(silent = true) }
         viewModelScope.launch { loadAnnouncement() }
         viewModelScope.launch { checkForAppUpdate() }
+        viewModelScope.launch(Dispatchers.IO) { TikNetDevice.registerIfLoggedIn(getApplication()) }
         loadUnreadCount()
         viewModelScope.launch(Dispatchers.IO) {
             runCatching { TikNetSync.syncPersonalSubscription(getApplication()) }
@@ -580,6 +593,11 @@ class TikNetMainViewModel(
                 if (TikNetPrefs.getUsername(ctx).isNullOrBlank() && me.username.isNotBlank()) {
                     TikNetPrefs.saveSession(ctx, base, token, me.username)
                 }
+                val alert = TikNetEntitlementAlerts.evaluate(me)
+                withContext(Dispatchers.IO) {
+                    TikNetEntitlementAlerts.maybeNotify(ctx, alert)
+                    runCatching { TikNetDevice.registerIfLoggedIn(ctx) }
+                }
                 _ui.update {
                     it.copy(
                         user = me,
@@ -589,6 +607,7 @@ class TikNetMainViewModel(
                         telegramSupport = supportTg ?: me.supportTelegram,
                         shopUrl = if (publicCfg?.shopEnabled == true) publicCfg.shopUrl else null,
                         shopLabel = publicCfg?.shopLabel,
+                        entitlementAlert = alert,
                     )
                 }
             } catch (e: Exception) {
@@ -598,6 +617,7 @@ class TikNetMainViewModel(
                 val fallback = cached
                     ?: _ui.value.user
                     ?: uname?.takeIf { it.isNotBlank() }?.let { TikNetUserInfo(username = it) }
+                val alert = TikNetEntitlementAlerts.evaluate(fallback)
                 _ui.update {
                     it.copy(
                         user = fallback,
@@ -605,6 +625,7 @@ class TikNetMainViewModel(
                         userLoading = false,
                         telegramSupport = cached?.supportTelegram ?: it.telegramSupport,
                         error = if (!silent) TikNetErrors.message(e, "خطا در دریافت اطلاعات حساب") else it.error,
+                        entitlementAlert = alert,
                     )
                 }
             }
@@ -771,6 +792,78 @@ class TikNetMainViewModel(
                         faqLoading = false,
                         faq = emptyList(),
                         syncMessage = TikNetErrors.message(e, "خطا در راهنما و سوالات"),
+                    )
+                }
+            }
+        }
+    }
+
+    fun loadReferral(force: Boolean = false) {
+        if (!force && (_ui.value.referralLoading || _ui.value.referral != null || _ui.value.referralDisabled)) {
+            return
+        }
+        viewModelScope.launch {
+            _ui.update {
+                it.copy(referralLoading = true, referralError = null, referralDisabled = false)
+            }
+            try {
+                val ctx = getApplication<Application>()
+                val base = TikNetPrefs.getBaseUrl(ctx)
+                val token = TikNetPrefs.getAccessToken(ctx)
+                if (base.isNullOrBlank() || token.isNullOrBlank()) {
+                    _ui.update { it.copy(referralLoading = false, referralDisabled = true) }
+                    return@launch
+                }
+                val info = withContext(Dispatchers.IO) { TikNetApi.getReferral(base, token) }
+                if (!info.enabled) {
+                    _ui.update {
+                        it.copy(referralLoading = false, referral = null, referralDisabled = true)
+                    }
+                    return@launch
+                }
+                _ui.update {
+                    it.copy(referralLoading = false, referral = info, referralError = null, referralDisabled = false)
+                }
+            } catch (e: Exception) {
+                val code = (e as? TikNetApiException)?.statusCode
+                if (code == 403 || code == 404 || code == 501) {
+                    _ui.update {
+                        it.copy(referralLoading = false, referralDisabled = true, referral = null)
+                    }
+                } else {
+                    _ui.update {
+                        it.copy(
+                            referralLoading = false,
+                            referralError = TikNetErrors.message(e, "خطا در دریافت اطلاعات معرف"),
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    fun attachReferralCode(code: String) {
+        val trimmed = code.trim()
+        if (trimmed.isEmpty() || _ui.value.referralAttaching) return
+        viewModelScope.launch {
+            _ui.update { it.copy(referralAttaching = true) }
+            try {
+                val ctx = getApplication<Application>()
+                val base = TikNetPrefs.getBaseUrl(ctx)!!
+                val token = TikNetPrefs.getAccessToken(ctx)!!
+                withContext(Dispatchers.IO) { TikNetApi.attachReferral(base, token, trimmed) }
+                _ui.update {
+                    it.copy(
+                        referralAttaching = false,
+                        syncMessage = "کد معرف ثبت شد.",
+                    )
+                }
+                loadReferral(force = true)
+            } catch (e: Exception) {
+                _ui.update {
+                    it.copy(
+                        referralAttaching = false,
+                        syncMessage = TikNetErrors.message(e, "ثبت کد معرف ناموفق"),
                     )
                 }
             }

@@ -14,6 +14,8 @@ object TikNetPrefs {
     const val KEY_PANEL_URLS_CACHE = "panel_urls_json"
     const val KEY_SUB_GUID = "tiknet_sub_guid"
     const val TIKNET_SUB_GUID = "tiknet-personal"
+    private const val KEY_DEVICE_ID = "device_id"
+    private const val KEY_ENTITLEMENT_NOTIF_PREFIX = "entitlement_notif_"
 
     private fun prefs(ctx: Context): SharedPreferences =
         ctx.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -97,5 +99,19 @@ object TikNetPrefs {
                 trafficLimitBytes = if (o.has("traffic_limit_bytes") && !o.isNull("traffic_limit_bytes")) o.optLong("traffic_limit_bytes") else null,
             )
         }.getOrNull()
+    }
+
+    fun getDeviceId(ctx: Context): String? =
+        prefs(ctx).getString(KEY_DEVICE_ID, null)?.takeIf { it.isNotBlank() }
+
+    fun saveDeviceId(ctx: Context, id: String) {
+        prefs(ctx).edit().putString(KEY_DEVICE_ID, id).apply()
+    }
+
+    fun getEntitlementNotifDay(ctx: Context, kind: String): String? =
+        prefs(ctx).getString(KEY_ENTITLEMENT_NOTIF_PREFIX + kind, null)
+
+    fun saveEntitlementNotifDay(ctx: Context, kind: String, dayKey: String) {
+        prefs(ctx).edit().putString(KEY_ENTITLEMENT_NOTIF_PREFIX + kind, dayKey).apply()
     }
 }

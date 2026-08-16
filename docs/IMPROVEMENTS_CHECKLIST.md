@@ -18,5 +18,8 @@
 ## P3 Performance (S24)
 - [x] Keep quiet notification / no launch ping storm / busy-only heavy animations
 
-## P4 Quality
-- [x] Unit tests for QR parse and `/me` tolerant parsing
+## P5 Completeness (4.3.14)
+- [x] Referral invite/share/attach UI + API
+- [x] Internet troubleshoot (existing) + panel health check
+- [x] Expiry / low-traffic banner + daily local notification
+- [x] Device register on login / app start

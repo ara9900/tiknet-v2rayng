@@ -68,18 +68,19 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.v2ray.ang.R
-import com.v2ray.ang.tiknet.TikNetApi
-import com.v2ray.ang.tiknet.TikNetApiException
-import com.v2ray.ang.tiknet.TikNetAppUpdateController
-import com.v2ray.ang.tiknet.TikNetErrors
-import com.v2ray.ang.tiknet.TikNetPrefs
-import com.v2ray.ang.tiknet.TikNetPublicConfig
+import com.v2ray.ang.tiknet.TikNetSync
+import com.v2ray.ang.tiknet.TikNetDevice
 import com.v2ray.ang.tiknet.TikNetQrCredentials
 import com.v2ray.ang.tiknet.TikNetQrLogin
 import com.v2ray.ang.tiknet.TikNetQrLoginToken
 import com.v2ray.ang.tiknet.TikNetQrSubscriptionLink
-import com.v2ray.ang.tiknet.TikNetSync
+import com.v2ray.ang.tiknet.TikNetPublicConfig
+import com.v2ray.ang.tiknet.TikNetPrefs
+import com.v2ray.ang.tiknet.TikNetErrors
+import com.v2ray.ang.tiknet.TikNetAppUpdateController
+import com.v2ray.ang.tiknet.TikNetApi
+import com.v2ray.ang.tiknet.TikNetApiException
+import com.v2ray.ang.R
 import com.v2ray.ang.ui.base.HelperBaseComponentActivity
 import com.v2ray.ang.ui.compose.ThemeManager
 import kotlinx.coroutines.Dispatchers
@@ -173,6 +174,7 @@ private fun TikNetLoginScreen(
             }
         }
         runCatching { TikNetSync.syncPersonalSubscription(context) }
+        runCatching { TikNetDevice.registerIfLoggedIn(context) }
         try {
             withContext(Dispatchers.IO) {
                 TikNetAppUpdateController.check(context)
