@@ -37,7 +37,19 @@ data class TikNetPublicConfig(
     val shopEnabled: Boolean = false,
     val shopUrl: String? = null,
     val shopLabel: String? = null,
-)
+) {
+    /** Same rules as Flutter [TikNetPublicConfig.showTelegramShop]. */
+    val showShop: Boolean
+        get() {
+            if (!shopEnabled) return false
+            val url = shopUrl?.trim().orEmpty()
+            if (url.isEmpty()) return false
+            val scheme = url.substringBefore(':', missingDelimiterValue = "")
+                .lowercase()
+                .trim()
+            return scheme == "http" || scheme == "https" || scheme == "tg"
+        }
+}
 
 data class TikNetAppUpdateInfo(
     val enabled: Boolean = false,
@@ -224,68 +236,118 @@ object TikNetApi {
                 .url("${root(baseUrl)}/api/customer/public-config")
                 .get()
                 .header("Accept", "application/json")
+                .header("Cache-Control", "no-cache")
+                .header("Pragma", "no-cache")
                 .build()
             client.newCall(req).execute().use { resp ->
                 if (!resp.isSuccessful) return TikNetPublicConfig()
                 val text = resp.body?.string().orEmpty()
-                val rootEl = runCatching { JsonParser.parseString(text).asJsonObject }.getOrNull()
-                    ?: return TikNetPublicConfig()
-                val shop = rootEl.getAsJsonObject("shop")
-                    ?: rootEl.getAsJsonObject("buy_renew")
-                    ?: rootEl.getAsJsonObject("app_shop")
-
-                fun pickBool(vararg keys: String): Boolean? {
-                    for (k in keys) {
-                        val v = rootEl.get(k) ?: shop?.get(k)
-                        if (v != null && v.isJsonPrimitive && v.asJsonPrimitive.isBoolean) return v.asBoolean
-                    }
-                    return null
-                }
-
-                fun pickString(vararg keys: String): String? {
-                    for (k in keys) {
-                        val v = (rootEl.get(k) ?: shop?.get(k))?.asString?.trim()
-                        if (!v.isNullOrEmpty()) return v
-                    }
-                    return null
-                }
-
-                val enabled = pickBool(
-                    "telegram_shop_enabled",
-                    "shop_enabled",
-                    "app_shop_enabled",
-                    "buy_enabled",
-                    "buy_renew_enabled",
-                    "show_shop_button",
-                    "show_buy_button",
-                ) ?: shop?.get("enabled")?.asBoolean ?: false
-
-                val url = pickString(
-                    "telegram_shop_url",
-                    "shop_url",
-                    "app_shop_url",
-                    "buy_url",
-                    "buy_renew_url",
-                    "renew_url",
-                    "telegram_bot_url",
-                ) ?: pickString("url", "link")
-
-                val label = pickString(
-                    "telegram_shop_label",
-                    "shop_label",
-                    "buy_label",
-                    "buy_renew_label",
-                ) ?: pickString("label", "title")
-
-                TikNetPublicConfig(
-                    shopEnabled = enabled,
-                    shopUrl = url,
-                    shopLabel = label,
-                )
+                parsePublicConfigJson(text)
             }
         } catch (_: Exception) {
             TikNetPublicConfig()
         }
+    }
+
+    /**
+     * Parse public-config JSON.
+     * For Telegram shop links (`t.me` / `tg:`), [telegram_shop_enabled] is authoritative:
+     * if that flag is missing/false, the buy button stays hidden even if a URL is present.
+     */
+    fun parsePublicConfigJson(text: String): TikNetPublicConfig {
+        if (text.isBlank()) return TikNetPublicConfig()
+        val rootEl = runCatching { JsonParser.parseString(text).asJsonObject }.getOrNull()
+            ?: return TikNetPublicConfig()
+        val shop = rootEl.getAsJsonObject("shop")
+            ?: rootEl.getAsJsonObject("buy_renew")
+            ?: rootEl.getAsJsonObject("app_shop")
+
+        fun readLooseBool(el: com.google.gson.JsonElement?): Boolean? {
+            if (el == null || el.isJsonNull || !el.isJsonPrimitive) return null
+            val p = el.asJsonPrimitive
+            if (p.isBoolean) return p.asBoolean
+            if (p.isNumber) return p.asInt != 0
+            if (p.isString) {
+                return when (p.asString.trim().lowercase()) {
+                    "1", "true", "yes", "on" -> true
+                    "0", "false", "no", "off" -> false
+                    else -> null
+                }
+            }
+            return null
+        }
+
+        fun pickBool(vararg keys: String): Boolean? {
+            for (k in keys) {
+                val v = readLooseBool(rootEl.get(k) ?: shop?.get(k))
+                if (v != null) return v
+            }
+            return null
+        }
+
+        fun pickString(vararg keys: String): String? {
+            for (k in keys) {
+                val el = rootEl.get(k) ?: shop?.get(k) ?: continue
+                if (el.isJsonNull || !el.isJsonPrimitive) continue
+                val s = el.asString?.trim()
+                if (!s.isNullOrEmpty()) return s
+            }
+            return null
+        }
+
+        val url = pickString(
+            "telegram_shop_url",
+            "shop_url",
+            "app_shop_url",
+            "buy_url",
+            "buy_renew_url",
+            "renew_url",
+            "telegram_bot_url",
+        ) ?: pickString("url", "link")
+
+        val label = pickString(
+            "telegram_shop_label",
+            "shop_label",
+            "buy_label",
+            "buy_renew_label",
+        ) ?: pickString("label", "title")
+
+        val telegramFlag = pickBool("telegram_shop_enabled")
+        val looksLikeTelegram = !url.isNullOrBlank() && (
+            url.contains("t.me/", ignoreCase = true) ||
+                url.contains("telegram.me/", ignoreCase = true) ||
+                url.startsWith("tg:", ignoreCase = true)
+            )
+
+        // Any explicit false among known flags wins (panel off must hide the button).
+        val explicitOff = listOf(
+            "telegram_shop_enabled",
+            "shop_enabled",
+            "app_shop_enabled",
+            "buy_enabled",
+            "buy_renew_enabled",
+            "show_shop_button",
+            "show_buy_button",
+        ).any { pickBool(it) == false } || readLooseBool(shop?.get("enabled")) == false
+
+        val enabled = when {
+            explicitOff -> false
+            looksLikeTelegram -> telegramFlag == true
+            else -> pickBool(
+                "shop_enabled",
+                "app_shop_enabled",
+                "buy_enabled",
+                "buy_renew_enabled",
+                "show_shop_button",
+                "show_buy_button",
+            ) ?: readLooseBool(shop?.get("enabled")) ?: false
+        }
+
+        return TikNetPublicConfig(
+            shopEnabled = enabled,
+            shopUrl = url,
+            shopLabel = label,
+        )
     }
 
     fun getSubscriptionConfigBytes(baseUrl: String, token: String): ByteArray {

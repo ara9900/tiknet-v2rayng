@@ -474,7 +474,7 @@ private fun TikNetLoginScreen(
                             Spacer(Modifier.size(8.dp))
                             Text("ورود با QR")
                         }
-                        if (shop.shopEnabled && !shop.shopUrl.isNullOrBlank()) {
+                        if (shop.showShop) {
                             Spacer(Modifier.height(12.dp))
                             Button(
                                 onClick = { runCatching { uriHandler.openUri(shop.shopUrl!!) } },

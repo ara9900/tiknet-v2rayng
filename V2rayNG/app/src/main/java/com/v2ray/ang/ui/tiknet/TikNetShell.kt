@@ -248,7 +248,10 @@ fun TikNetShell(
                         onFilterChangedRestart = onFilterChangedRestart,
                     )
                     TikNetTab.Account -> {
-                        LaunchedEffect(Unit) { viewModel.loadReferral() }
+                        LaunchedEffect(Unit) {
+                            viewModel.loadUser(silent = true)
+                            viewModel.loadReferral()
+                        }
                         AccountTab(
                             state = state,
                             onSync = onSync,

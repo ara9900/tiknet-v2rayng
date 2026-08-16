@@ -740,6 +740,9 @@ class TikNetMainViewModel(
                     TikNetEntitlementAlerts.maybeNotify(ctx, alert)
                     runCatching { TikNetDevice.registerIfLoggedIn(ctx) }
                 }
+                // Panel may disable shop via public-config and/or /me.shop_enabled.
+                val shopAllowedByMe = me.shopEnabled != false
+                val showShop = publicCfg?.showShop == true && shopAllowedByMe
                 _ui.update {
                     it.copy(
                         user = me,
@@ -748,8 +751,8 @@ class TikNetMainViewModel(
                         error = null,
                         profileOffline = false,
                         telegramSupport = supportTg ?: me.supportTelegram,
-                        shopUrl = if (publicCfg?.shopEnabled == true) publicCfg.shopUrl else null,
-                        shopLabel = publicCfg?.shopLabel,
+                        shopUrl = if (showShop) publicCfg?.shopUrl else null,
+                        shopLabel = if (showShop) publicCfg?.shopLabel else null,
                         entitlementAlert = alert,
                     )
                 }
