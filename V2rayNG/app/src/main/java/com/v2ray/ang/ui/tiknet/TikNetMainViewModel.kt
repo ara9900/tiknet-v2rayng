@@ -188,7 +188,9 @@ class TikNetMainViewModel(
         MessageHelper.sendMsg2Service(application, AppConfig.MSG_REGISTER_CLIENT, "")
         viewModelScope.launch(Dispatchers.IO) {
             TikNetBootstrap.applyDefaults(getApplication())
-            TikNetBootstrap.refreshGeoAssets(getApplication())
+            if (TikNetPrefs.isIranDirectEnabled(getApplication())) {
+                TikNetBootstrap.refreshGeoAssets(getApplication())
+            }
         }
         viewModelScope.launch { loadUser(silent = true) }
         viewModelScope.launch { loadAnnouncement() }
