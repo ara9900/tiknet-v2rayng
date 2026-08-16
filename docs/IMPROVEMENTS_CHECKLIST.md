@@ -37,3 +37,4 @@
 ## P8 (4.3.17)
 - [x] Iran routing toggle re-enable without app restart (no geo-block / race)
 - [x] Account connection settings: clearer Iran-direct title + banking apps copy
+- [x] Preset apply returns success; never mark seeded on failed WHITE_IRAN load

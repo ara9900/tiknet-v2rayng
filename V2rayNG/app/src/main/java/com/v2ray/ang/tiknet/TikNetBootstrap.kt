@@ -27,9 +27,12 @@ object TikNetBootstrap {
             val iranOn = TikNetPrefs.isIranDirectEnabled(context)
             if (iranOn) {
                 if (MmkvManager.decodeSettingsBool(PREF_ROUTING_SEEDED) != true) {
-                    SettingsManager.resetRoutingRulesetsFromPresets(context, RoutingType.WHITE_IRAN)
-                    MmkvManager.encodeSettings(PREF_ROUTING_SEEDED, true)
-                    LogUtil.i(AppConfig.TAG, "TikNetBootstrap: Iran routing seeded")
+                    if (SettingsManager.resetRoutingRulesetsFromPresets(context, RoutingType.WHITE_IRAN)) {
+                        MmkvManager.encodeSettings(PREF_ROUTING_SEEDED, true)
+                        LogUtil.i(AppConfig.TAG, "TikNetBootstrap: Iran routing seeded")
+                    } else {
+                        LogUtil.e(AppConfig.TAG, "TikNetBootstrap: WHITE_IRAN preset missing; seed deferred")
+                    }
                 }
                 MmkvManager.encodeSettings(AppConfig.PREF_GEO_FILES_SOURCES, IRAN_GEO_SOURCE)
             }
@@ -48,12 +51,20 @@ object TikNetBootstrap {
     fun setIranDirectRouting(context: Context, enabled: Boolean) {
         TikNetPrefs.setIranDirectEnabled(context, enabled)
         if (enabled) {
-            SettingsManager.resetRoutingRulesetsFromPresets(context, RoutingType.WHITE_IRAN)
+            val ok = SettingsManager.resetRoutingRulesetsFromPresets(context, RoutingType.WHITE_IRAN)
+            if (!ok) {
+                // Do not mark seeded — cold start can retry via applyDefaults.
+                MmkvManager.encodeSettings(PREF_ROUTING_SEEDED, false)
+                throw IllegalStateException("Failed to load WHITE_IRAN routing preset")
+            }
             MmkvManager.encodeSettings(PREF_ROUTING_SEEDED, true)
             MmkvManager.encodeSettings(AppConfig.PREF_GEO_FILES_SOURCES, IRAN_GEO_SOURCE)
             LogUtil.i(AppConfig.TAG, "TikNetBootstrap: Iran direct ON")
         } else {
-            SettingsManager.resetRoutingRulesetsFromPresets(context, RoutingType.GLOBAL)
+            val ok = SettingsManager.resetRoutingRulesetsFromPresets(context, RoutingType.GLOBAL)
+            if (!ok) {
+                throw IllegalStateException("Failed to load GLOBAL routing preset")
+            }
             MmkvManager.encodeSettings(PREF_ROUTING_SEEDED, false)
             LogUtil.i(AppConfig.TAG, "TikNetBootstrap: Iran direct OFF (global + LAN)")
         }
