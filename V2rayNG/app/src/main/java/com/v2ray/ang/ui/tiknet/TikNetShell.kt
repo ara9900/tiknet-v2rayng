@@ -2298,105 +2298,122 @@ private fun ConnectionSettingsCard(
     onWidgetModeChange: (String) -> Unit,
     onWidgetServerChange: (String?) -> Unit,
 ) {
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
-            .background(TikSurface)
-            .border(1.dp, TikBorder, RoundedCornerShape(14.dp))
-            .padding(14.dp),
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text("مسیریابی ایران + لوکال", color = TikOnBg, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    "دامنه‌ها و IPهای ایران و شبکه محلی مستقیم می‌روند؛ بقیه از VPN. برای کارکرد درست، فایل‌های geo به‌روز می‌شوند.",
-                    color = TikMuted,
-                    fontSize = 12.sp,
-                    lineHeight = 17.sp,
+    Column(Modifier.fillMaxWidth()) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(14.dp))
+                .background(TikSurface)
+                .border(1.dp, TikBorder, RoundedCornerShape(14.dp))
+                .padding(14.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        "مسیریابی ایران+لوکال به صورت مستقیم",
+                        color = TikOnBg,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 14.sp,
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "با روشن بودن این گزینه، برای همراه‌بانک‌ها، اپ‌های ایرانی و سایت‌های داخلی دیگر لازم نیست فیلتر/VPN تیک‌نت را خاموش کنید.",
+                        color = TikMuted,
+                        fontSize = 12.sp,
+                        lineHeight = 17.sp,
+                    )
+                }
+                Switch(
+                    checked = state.iranDirectEnabled,
+                    onCheckedChange = onIranDirectChange,
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = Color.White,
+                        checkedTrackColor = TikPrimary,
+                        uncheckedThumbColor = Color.White,
+                        uncheckedTrackColor = TikMuted.copy(alpha = 0.35f),
+                    ),
                 )
             }
-            Switch(
-                checked = state.iranDirectEnabled,
-                onCheckedChange = onIranDirectChange,
-                colors = SwitchDefaults.colors(
-                    checkedThumbColor = Color.White,
-                    checkedTrackColor = TikPrimary,
-                    uncheckedThumbColor = Color.White,
-                    uncheckedTrackColor = TikMuted.copy(alpha = 0.35f),
-                ),
-            )
         }
 
-        Spacer(Modifier.height(16.dp))
-        HorizontalDivider(color = TikBorder)
-        Spacer(Modifier.height(14.dp))
+        // Clear break so widget settings read as a separate concern.
+        Spacer(Modifier.height(26.dp))
+        HorizontalDivider(thickness = 1.dp, color = TikBorder)
+        Spacer(modifier.height(26.dp))
 
-        Text("ویجت خانه", color = TikOnBg, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-        Spacer(Modifier.height(4.dp))
-        Text(
-            "وقتی از ویجت وصل می‌کنید، از کدام سرور استفاده شود.",
-            color = TikMuted,
-            fontSize = 12.sp,
-            lineHeight = 17.sp,
-        )
-        Spacer(Modifier.height(10.dp))
-        WidgetModeOption(
-            selected = state.widgetMode == TikNetPrefs.WIDGET_MODE_CURRENT,
-            title = "سرور انتخاب‌شده فعلی",
-            subtitle = "همان سروری که در اپ انتخاب کرده‌اید",
-            onClick = { onWidgetModeChange(TikNetPrefs.WIDGET_MODE_CURRENT) },
-        )
-        Spacer(Modifier.height(8.dp))
-        WidgetModeOption(
-            selected = state.widgetMode == TikNetPrefs.WIDGET_MODE_SMART,
-            title = "اتصال هوشمند",
-            subtitle = "بهترین سرور بر اساس آخرین پینگ ذخیره‌شده",
-            onClick = { onWidgetModeChange(TikNetPrefs.WIDGET_MODE_SMART) },
-        )
-        Spacer(Modifier.height(8.dp))
-        WidgetModeOption(
-            selected = state.widgetMode == TikNetPrefs.WIDGET_MODE_FIXED,
-            title = "سرور ثابت",
-            subtitle = "همیشه یک سرور مشخص",
-            onClick = { onWidgetModeChange(TikNetPrefs.WIDGET_MODE_FIXED) },
-        )
-        if (state.widgetMode == TikNetPrefs.WIDGET_MODE_FIXED) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(14.dp))
+                .background(TikSurface)
+                .border(1.dp, TikBorder, RoundedCornerShape(14.dp))
+                .padding(14.dp),
+        ) {
+            Text("ویجت خانه", color = TikOnBg, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "وقتی از ویجت وصل می‌کنید، از کدام سرور استفاده شود.",
+                color = TikMuted,
+                fontSize = 12.sp,
+                lineHeight = 17.sp,
+            )
             Spacer(Modifier.height(10.dp))
-            if (state.servers.isEmpty()) {
-                Text("سروری برای انتخاب نیست. اول اشتراک را بروزرسانی کنید.", color = TikMuted, fontSize = 12.sp)
-            } else {
-                state.servers.take(12).forEach { server ->
-                    val selected = state.widgetServerGuid == server.guid
-                    Row(
-                        Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(if (selected) TikPrimary.copy(alpha = 0.12f) else Color.Transparent)
-                            .clickable { onWidgetServerChange(server.guid) }
-                            .padding(horizontal = 10.dp, vertical = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            "${flagFromRemarks(server.remarks)} ${server.remarks}",
-                            color = TikOnBg,
-                            fontSize = 13.sp,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f),
-                        )
-                        if (selected) {
-                            Icon(Icons.Outlined.CheckCircle, contentDescription = null, tint = TikPrimary, modifier = Modifier.size(18.dp))
+            WidgetModeOption(
+                selected = state.widgetMode == TikNetPrefs.WIDGET_MODE_CURRENT,
+                title = "سرور انتخاب‌شده فعلی",
+                subtitle = "همان سروری که در اپ انتخاب کرده‌اید",
+                onClick = { onWidgetModeChange(TikNetPrefs.WIDGET_MODE_CURRENT) },
+            )
+            Spacer(Modifier.height(8.dp))
+            WidgetModeOption(
+                selected = state.widgetMode == TikNetPrefs.WIDGET_MODE_SMART,
+                title = "اتصال هوشمند",
+                subtitle = "بهترین سرور بر اساس آخرین پینگ ذخیره‌شده",
+                onClick = { onWidgetModeChange(TikNetPrefs.WIDGET_MODE_SMART) },
+            )
+            Spacer(Modifier.height(8.dp))
+            WidgetModeOption(
+                selected = state.widgetMode == TikNetPrefs.WIDGET_MODE_FIXED,
+                title = "سرور ثابت",
+                subtitle = "همیشه یک سرور مشخص",
+                onClick = { onWidgetModeChange(TikNetPrefs.WIDGET_MODE_FIXED) },
+            )
+            if (state.widgetMode == TikNetPrefs.WIDGET_MODE_FIXED) {
+                Spacer(Modifier.height(10.dp))
+                if (state.servers.isEmpty()) {
+                    Text("سروری برای انتخاب نیست. اول اشتراک را بروزرسانی کنید.", color = TikMuted, fontSize = 12.sp)
+                } else {
+                    state.servers.take(12).forEach { server ->
+                        val selected = state.widgetServerGuid == server.guid
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(if (selected) TikPrimary.copy(alpha = 0.12f) else Color.Transparent)
+                                .clickable { onWidgetServerChange(server.guid) }
+                                .padding(horizontal = 10.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                "${flagFromRemarks(server.remarks)} ${server.remarks}",
+                                color = TikOnBg,
+                                fontSize = 13.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f),
+                            )
+                            if (selected) {
+                                Icon(Icons.Outlined.CheckCircle, contentDescription = null, tint = TikPrimary, modifier = Modifier.size(18.dp))
+                            }
                         }
                     }
-                }
-                if (state.servers.size > 12) {
-                    Text(
-                        "و ${TikNetJalali.toPersianDigits((state.servers.size - 12).toString())} سرور دیگر…",
-                        color = TikMuted,
-                        fontSize = 11.sp,
-                    )
+                    if (state.servers.size > 12) {
+                        Text(
+                            "و ${TikNetJalali.toPersianDigits((state.servers.size - 12).toString())} سرور دیگر…",
+                            color = TikMuted,
+                            fontSize = 11.sp,
+                        )
+                    }
                 }
             }
         }

@@ -511,8 +511,14 @@ class TikNetMainViewModel(
                             }
                             TikNetBootstrap.refreshGeoAssets(ctx)
                             withContext(Dispatchers.Main) {
-                                if (seq == iranRoutingSeq.get() && TikNetPrefs.isIranDirectEnabled(ctx)) {
-                                    _ui.update { it.copy(syncMessage = "فایل‌های مسیریابی آماده شد") }
+                                if (seq != iranRoutingSeq.get() || !TikNetPrefs.isIranDirectEnabled(ctx)) {
+                                    return@withContext
+                                }
+                                _ui.update { it.copy(syncMessage = "فایل‌های مسیریابی آماده شد") }
+                                // Geo files are required for WHITE_IRAN domain/IP matches —
+                                // restart again so the running core reloads with assets present.
+                                if (_ui.value.phase == TikNetConnPhase.Connected) {
+                                    _events.tryEmit(TikNetUiEvent.RestartVpn)
                                 }
                             }
                         }
@@ -1043,11 +1049,13 @@ class TikNetMainViewModel(
                 )
             }
 
-            // Routing / geo
+            // Routing / geo (only refresh Iran geo assets when that mode is on)
             withContext(Dispatchers.IO) {
                 runCatching {
                     TikNetBootstrap.applyDefaults(getApplication())
-                    TikNetBootstrap.refreshGeoAssets(getApplication())
+                    if (TikNetPrefs.isIranDirectEnabled(getApplication())) {
+                        TikNetBootstrap.refreshGeoAssets(getApplication())
+                    }
                     messages += "مسیریابی / geo بررسی شد"
                 }
             }

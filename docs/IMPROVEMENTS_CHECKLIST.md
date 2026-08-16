@@ -33,3 +33,7 @@
 ## P7 Completeness (4.3.16)
 - [x] Widget connect mode: current / smart / fixed server
 - [x] Simple Iran+LAN direct routing toggle (geo assets)
+
+## P8 (4.3.17)
+- [x] Iran routing toggle re-enable without app restart (no geo-block / race)
+- [x] Account connection settings: clearer Iran-direct title + banking apps copy
