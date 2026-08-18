@@ -2179,10 +2179,10 @@ private fun AccountTab(
             HorizontalDivider(color = TikBorder, modifier = Modifier.padding(start = 60.dp))
             ServiceTile(Icons.Outlined.Troubleshoot, "عیب‌یابی اینترنت گوشی", onOpenDiagnostics)
             HorizontalDivider(color = TikBorder, modifier = Modifier.padding(start = 60.dp))
-            ServiceTile(Icons.Outlined.ContentCopy, "کپی اطلاعات پشتیبانی") {
+            ServiceTile(Icons.Outlined.ContentCopy, "کپی اطلاعات پشتیبانی", onClick = {
                 clipboard.setText(AnnotatedString(supportTicketText()))
                 onSupportCopied()
-            }
+            })
         }
 
         Spacer(Modifier.height(18.dp))
@@ -2788,8 +2788,8 @@ private fun TrafficCard(user: TikNetUserInfo?) {
 private fun ServiceTile(
     icon: ImageVector,
     label: String,
-    onClick: () -> Unit,
     badge: Int = 0,
+    onClick: () -> Unit,
 ) {
     Row(
         Modifier
