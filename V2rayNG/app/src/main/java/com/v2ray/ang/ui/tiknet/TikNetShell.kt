@@ -18,6 +18,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -39,6 +40,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.outlined.Logout
 import androidx.compose.material.icons.outlined.Analytics
 import androidx.compose.material.icons.outlined.Apps
@@ -1204,45 +1206,86 @@ private fun DetailsTab(state: TikNetMainUiState) {
         "—"
     }
     val selected = state.servers.firstOrNull { it.guid == state.selectedGuid }
+    val (flag, ipText) = TikNetMessages.formatExitIp(
+        state.exitIpText.takeIf { it.isNotBlank() },
+    )
+    val exitValue = when {
+        state.exitIpText.isBlank() && connected -> "در حال دریافت…"
+        state.exitIpText.isBlank() -> "—"
+        else -> ipText
+    }
+    val sessionTotal = state.sessionUp + state.sessionDown
+    val downShare = if (sessionTotal > 0) state.sessionDown.toFloat() / sessionTotal.toFloat() else 0.5f
 
     Column(
         Modifier
             .fillMaxSize()
             .statusBarsPadding()
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 20.dp)
-            .padding(bottom = 28.dp),
+            .padding(horizontal = 20.dp, vertical = 12.dp)
+            .padding(bottom = 20.dp),
     ) {
-        Text(
-            "جزئیات اتصال",
-            color = TikOnBg,
-            fontSize = 20.sp,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 14.dp),
-            textAlign = TextAlign.Center,
-        )
+        Text("جزئیات اتصال", color = TikOnBg, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(4.dp))
+        Text("وضعیت تونل، مسیر و مصرف این نشست", color = TikMuted, fontSize = 13.sp)
 
-        DetailCard(title = "وضعیت") {
+        Spacer(Modifier.height(16.dp))
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(20.dp))
+                .background(TikSurface)
+                .border(1.dp, statusColor.copy(alpha = 0.32f), RoundedCornerShape(20.dp))
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                Modifier
+                    .size(52.dp)
+                    .clip(CircleShape)
+                    .background(statusColor.copy(alpha = 0.16f))
+                    .border(1.dp, statusColor.copy(alpha = 0.4f), CircleShape),
+                contentAlignment = Alignment.Center,
+            ) {
+                Box(
+                    Modifier
+                        .size(12.dp)
+                        .clip(CircleShape)
+                        .background(statusColor),
+                )
+            }
+            Spacer(Modifier.width(14.dp))
+            Column(Modifier.weight(1f)) {
+                Text(statusLabel(state), color = statusColor, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                Spacer(Modifier.height(4.dp))
+                Text(statusHint(state), color = TikMuted, fontSize = 12.sp, lineHeight = 16.sp)
+            }
+        }
+
+        Spacer(Modifier.height(18.dp))
+        AccountSectionLabel("وضعیت", "اتصال و مدت نشست")
+        DetailCard {
             DetailRow(Icons.Outlined.VerifiedUser, "وضعیت", statusLabel(state), statusColor)
             ThinDivider()
             DetailRow(Icons.Outlined.Timelapse, "مدت اتصال", uptime)
         }
-        Spacer(Modifier.height(16.dp))
 
-        DetailCard(title = "سرور و مسیر") {
+        Spacer(Modifier.height(18.dp))
+        AccountSectionLabel("سرور و مسیر", "نود انتخابی و تأخیر")
+        DetailCard {
             DetailRow(Icons.Outlined.Dns, "سرور انتخابی", state.selectedTitle.ifBlank { "—" })
             ThinDivider()
             DetailRow(Icons.Outlined.Route, "پروتکل", selected?.protocolLabel?.ifBlank { "—" } ?: "—")
             ThinDivider()
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Outlined.Speed, contentDescription = null, tint = TikMuted, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(12.dp))
-                Text("پینگ سرور", color = TikMuted, fontSize = 14.sp, modifier = Modifier.weight(1f))
-                val ping = selected?.pingMs
-                if (ping != null) PingChip(ping) else Text("—", color = TikOnBg, fontWeight = FontWeight.Medium)
-            }
+            DetailRow(
+                icon = Icons.Outlined.Speed,
+                label = "پینگ سرور",
+                value = selected?.pingMs?.let { TikNetJalali.toPersianDigits("$it ms") } ?: "—",
+                trailing = {
+                    val ping = selected?.pingMs
+                    if (ping != null) PingChip(ping) else Text("—", color = TikOnBg, fontWeight = FontWeight.Medium)
+                },
+            )
             if (state.currentDelayText.isNotBlank()) {
                 ThinDivider()
                 DetailRow(
@@ -1252,37 +1295,51 @@ private fun DetailsTab(state: TikNetMainUiState) {
                 )
             }
         }
-        Spacer(Modifier.height(16.dp))
 
-        DetailCard(title = "آی‌پی خروجی") {
-            val (flag, ipText) = TikNetMessages.formatExitIp(
-                state.exitIpText.takeIf { it.isNotBlank() },
-            )
+        Spacer(Modifier.height(18.dp))
+        AccountSectionLabel("آی‌پی خروجی", "مقصد ترافیک بعد از تونل")
+        DetailCard {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    if (state.exitIpText.isBlank() && !connected) "🌐" else flag.ifBlank { "🌐" },
-                    fontSize = 28.sp,
-                )
+                Box(
+                    Modifier
+                        .size(52.dp)
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(TikSurface2)
+                        .border(1.dp, TikBorder, RoundedCornerShape(16.dp)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        if (state.exitIpText.isBlank() && !connected) "🌐" else flag.ifBlank { "🌐" },
+                        fontSize = 26.sp,
+                    )
+                }
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
-                    Text("آی‌پی خروجی", color = TikMuted, fontSize = 13.sp)
+                    Text("آی‌پی خروجی", color = TikMuted, fontSize = 12.sp)
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        when {
-                            state.exitIpText.isBlank() && connected -> "در حال دریافت…"
-                            state.exitIpText.isBlank() -> "—"
-                            else -> ipText
-                        },
+                        exitValue,
                         color = TikOnBg,
                         fontWeight = FontWeight.SemiBold,
                         fontSize = 15.sp,
                     )
+                    if (connected && state.exitIpText.isNotBlank()) {
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            destinationLine(state),
+                            color = TikMuted,
+                            fontSize = 12.sp,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
                 }
             }
         }
-        Spacer(Modifier.height(16.dp))
 
-        DetailCard(title = "سرعت لحظه‌ای") {
+        Spacer(Modifier.height(18.dp))
+        AccountSectionLabel("سرعت لحظه‌ای", "دانلود و آپلود زنده")
+        DetailCard {
             Row {
                 MetricTile(
                     modifier = Modifier.weight(1f),
@@ -1301,35 +1358,46 @@ private fun DetailsTab(state: TikNetMainUiState) {
                 )
             }
         }
-        Spacer(Modifier.height(16.dp))
 
-        DetailCard(title = "ترافیک این نشست") {
+        Spacer(Modifier.height(18.dp))
+        AccountSectionLabel("ترافیک این نشست", "حجم از زمان وصل شدن")
+        DetailCard {
+            if (connected && sessionTotal > 0) {
+                Row(Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(8.dp))) {
+                    Box(Modifier.weight(downShare.coerceIn(0.08f, 0.92f)).fillMaxSize().background(TikConnected))
+                    Box(Modifier.weight((1f - downShare).coerceIn(0.08f, 0.92f)).fillMaxSize().background(TikPrimary))
+                }
+                Spacer(Modifier.height(12.dp))
+            }
             DetailRow(
                 Icons.Outlined.ArrowDownward,
                 "حجم دانلود",
                 if (connected) TikNetJalali.toPersianDigits(TikNetJalali.formatSize(state.sessionDown)) else "—",
+                TikConnected,
             )
             ThinDivider()
             DetailRow(
                 Icons.Outlined.ArrowUpward,
                 "حجم آپلود",
                 if (connected) TikNetJalali.toPersianDigits(TikNetJalali.formatSize(state.sessionUp)) else "—",
+                TikPrimary,
             )
             ThinDivider()
             DetailRow(
                 Icons.Outlined.SwapVert,
                 "مجموع نشست",
                 if (connected) {
-                    TikNetJalali.toPersianDigits(TikNetJalali.formatSize(state.sessionUp + state.sessionDown))
+                    TikNetJalali.toPersianDigits(TikNetJalali.formatSize(sessionTotal))
                 } else {
                     "—"
                 },
             )
         }
-        Spacer(Modifier.height(16.dp))
 
-        DetailCard(title = "هسته") {
-            DetailRow(Icons.Outlined.Memory, "وضعیت هسته", if (connected) "فعال" else "متوقف")
+        Spacer(Modifier.height(18.dp))
+        AccountSectionLabel("هسته", "موتور VPN و حالت انتخاب سرور")
+        DetailCard {
+            DetailRow(Icons.Outlined.Memory, "وضعیت هسته", if (connected) "فعال" else "متوقف", if (connected) TikConnected else TikMuted)
             ThinDivider()
             DetailRow(Icons.Outlined.Timelapse, "مدت اتصال", uptime)
             ThinDivider()
@@ -1343,39 +1411,55 @@ private fun DetailsTab(state: TikNetMainUiState) {
 }
 
 @Composable
-private fun DetailCard(title: String, content: @Composable () -> Unit) {
+private fun DetailCard(content: @Composable ColumnScope.() -> Unit) {
     Column(
         Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
+            .clip(RoundedCornerShape(20.dp))
             .background(TikSurface)
-            .border(1.dp, TikBorder, RoundedCornerShape(16.dp))
+            .border(1.dp, TikBorder, RoundedCornerShape(20.dp))
             .padding(16.dp),
-    ) {
-        Text(title, color = TikOnBg, fontWeight = FontWeight.Bold, fontSize = 15.sp)
-        Spacer(Modifier.height(12.dp))
-        content()
-    }
+        content = content,
+    )
 }
 
 @Composable
-private fun DetailRow(icon: ImageVector, label: String, value: String, valueColor: Color = TikOnBg) {
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(icon, contentDescription = null, tint = TikMuted, modifier = Modifier.size(18.dp))
-            Spacer(Modifier.width(12.dp))
-            Text(label, color = TikMuted, fontSize = 13.sp)
+private fun DetailRow(
+    icon: ImageVector,
+    label: String,
+    value: String,
+    valueColor: Color = TikOnBg,
+    trailing: (@Composable () -> Unit)? = null,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            Modifier
+                .size(32.dp)
+                .clip(RoundedCornerShape(10.dp))
+                .background(TikSurface2),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(icon, contentDescription = null, tint = TikMuted, modifier = Modifier.size(16.dp))
         }
-        Spacer(Modifier.height(6.dp))
-        Text(
-            value,
-            color = valueColor,
-            fontWeight = FontWeight.Medium,
-            fontSize = 15.sp,
-            maxLines = 4,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.fillMaxWidth(),
-        )
+        Spacer(Modifier.width(12.dp))
+        Text(label, color = TikMuted, fontSize = 13.sp, modifier = Modifier.weight(1f))
+        if (trailing != null) {
+            trailing()
+        } else {
+            Text(
+                value,
+                color = valueColor,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 14.sp,
+                textAlign = TextAlign.End,
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1.15f),
+            )
+        }
     }
 }
 
@@ -1389,17 +1473,26 @@ private fun MetricTile(
 ) {
     Column(
         modifier
-            .clip(RoundedCornerShape(12.dp))
+            .clip(RoundedCornerShape(16.dp))
             .background(TikSurface2)
-            .padding(12.dp),
+            .border(1.dp, iconColor.copy(alpha = 0.22f), RoundedCornerShape(16.dp))
+            .padding(14.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(icon, contentDescription = null, tint = iconColor, modifier = Modifier.size(16.dp))
-            Spacer(Modifier.width(6.dp))
+            Box(
+                Modifier
+                    .size(28.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(iconColor.copy(alpha = 0.14f)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(icon, contentDescription = null, tint = iconColor, modifier = Modifier.size(15.dp))
+            }
+            Spacer(Modifier.width(8.dp))
             Text(label, color = TikMuted, fontSize = 12.sp)
         }
-        Spacer(Modifier.height(8.dp))
-        Text(value, color = TikOnBg, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+        Spacer(Modifier.height(10.dp))
+        Text(value, color = TikOnBg, fontWeight = FontWeight.Bold, fontSize = 18.sp, maxLines = 1)
     }
 }
 
@@ -1820,71 +1913,109 @@ private fun AccountTab(
     val expired = user?.isExpired == true
     val hasSub = user?.hasSubscription == true
     val active = user != null && hasSub && user.isExpired != true
+    val displayName = user?.fullName?.takeIf { it.isNotBlank() } ?: user?.username ?: "—"
+    val accent = when {
+        state.userLoading && user == null -> TikMuted
+        expired && hasSub -> TikDanger
+        !hasSub && user != null -> TikWarn
+        active -> TikConnected
+        else -> TikPrimary
+    }
+    val uriHandler = LocalUriHandler.current
+    val clipboard = LocalClipboardManager.current
+    val context = LocalContext.current
+    val shopUrl = state.shopUrl
+    fun supportTicketText(): String {
+        val u = state.user?.username ?: TikNetPrefs.getUsername(context) ?: "—"
+        val device = runCatching { TikNetDevice.getOrCreateDeviceId(context).take(8) }.getOrDefault("—")
+        return buildString {
+            appendLine("TikNet پشتیبانی")
+            appendLine("user: @$u")
+            appendLine("version: ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
+            appendLine("android: ${Build.VERSION.RELEASE} / SDK ${Build.VERSION.SDK_INT}")
+            appendLine("model: ${Build.MANUFACTURER} ${Build.MODEL}")
+            appendLine("device: $device")
+            if (state.profileOffline) appendLine("profile: offline-cache")
+        }.trim()
+    }
 
     Column(
         Modifier
             .fillMaxSize()
             .statusBarsPadding()
             .verticalScroll(rememberScrollState())
-            .padding(bottom = 28.dp),
+            .padding(horizontal = 20.dp, vertical = 12.dp)
+            .padding(bottom = 20.dp),
     ) {
-        Box(
+        Text("حساب من", color = TikOnBg, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(4.dp))
+        Text("پروفایل، اشتراک و تنظیمات دستگاه", color = TikMuted, fontSize = 13.sp)
+
+        Spacer(Modifier.height(16.dp))
+        Row(
             Modifier
                 .fillMaxWidth()
-                .background(
-                    Brush.verticalGradient(
-                        listOf(TikPrimary.copy(alpha = 0.35f), TikBg),
-                    ),
-                )
-                .padding(top = 20.dp, bottom = 24.dp),
-            contentAlignment = Alignment.Center,
+                .clip(RoundedCornerShape(20.dp))
+                .background(TikSurface)
+                .border(1.dp, accent.copy(alpha = 0.28f), RoundedCornerShape(20.dp))
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("حساب من", color = TikOnBg, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                Spacer(Modifier.height(20.dp))
-                Box(
-                    Modifier
-                        .size(84.dp)
-                        .clip(CircleShape)
-                        .background(
-                            Brush.linearGradient(listOf(TikPrimary, TikPrimary.copy(alpha = 0.55f))),
-                        )
-                        .border(2.dp, Color.White.copy(alpha = 0.25f), CircleShape),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        (user?.username ?: "?").take(1).uppercase(),
-                        color = Color.White,
-                        fontSize = 34.sp,
-                        fontWeight = FontWeight.Bold,
-                    )
-                }
-                Spacer(Modifier.height(12.dp))
+            Box(
+                Modifier
+                    .size(64.dp)
+                    .clip(CircleShape)
+                    .background(Brush.linearGradient(listOf(accent, accent.copy(alpha = 0.55f))))
+                    .border(2.dp, Color.White.copy(alpha = 0.18f), CircleShape),
+                contentAlignment = Alignment.Center,
+            ) {
                 Text(
-                    user?.fullName?.takeIf { it.isNotBlank() } ?: user?.username ?: "—",
-                    color = TikOnBg,
-                    fontSize = 18.sp,
+                    displayName.take(1).uppercase(),
+                    color = Color.White,
+                    fontSize = 26.sp,
                     fontWeight = FontWeight.Bold,
                 )
-                if (!user?.username.isNullOrBlank() && !user?.fullName.isNullOrBlank()) {
-                    Text("@${user!!.username}", color = TikMuted, fontSize = 13.sp)
+            }
+            Spacer(Modifier.width(14.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    displayName,
+                    color = TikOnBg,
+                    fontSize = 17.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (!user?.username.isNullOrBlank()) {
+                    Spacer(Modifier.height(2.dp))
+                    Text("@${user!!.username}", color = TikMuted, fontSize = 13.sp, maxLines = 1)
                 }
-                Spacer(Modifier.height(10.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Spacer(Modifier.height(8.dp))
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
                     StatusBadge(
                         expired = expired,
                         active = active,
                         hasSub = hasSub,
                         loading = state.userLoading && user == null,
                     )
-                    if (state.profileOffline) {
-                        OfflineBadge()
-                    }
+                    if (state.profileOffline) OfflineBadge()
                 }
             }
         }
 
-        Column(Modifier.padding(horizontal = 20.dp)) {
+        Spacer(Modifier.height(18.dp))
+        AccountSectionLabel("اشتراک", "وضعیت پلن و مصرف")
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(20.dp))
+                .background(TikSurface)
+                .border(1.dp, TikBorder, RoundedCornerShape(20.dp))
+                .padding(14.dp),
+        ) {
             Row {
                 StatTile(
                     Modifier.weight(1f),
@@ -1909,10 +2040,9 @@ private fun AccountTab(
                     user?.daysRemaining?.let { TikNetJalali.toPersianDigits(it.toString()) } ?: "—",
                 )
                 Spacer(Modifier.width(10.dp))
-                // Keep grid balanced without last-sync field
                 StatTile(
                     Modifier.weight(1f),
-                    Icons.Outlined.Info,
+                    Icons.Outlined.VerifiedUser,
                     "وضعیت",
                     when {
                         expired -> "منقضی"
@@ -1929,154 +2059,175 @@ private fun AccountTab(
                 TrafficCard(user)
             }
 
-            Spacer(Modifier.height(20.dp))
+            Spacer(Modifier.height(14.dp))
             Button(
                 onClick = onSync,
                 enabled = !state.busy,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(52.dp),
+                    .height(50.dp),
                 shape = RoundedCornerShape(14.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = TikPrimary, contentColor = Color.White),
             ) {
                 if (state.busy) {
-                    CircularProgressIndicator(modifier = Modifier.size(22.dp), color = Color.White)
+                    CircularProgressIndicator(modifier = Modifier.size(20.dp), color = Color.White, strokeWidth = 2.dp)
                     Spacer(Modifier.width(10.dp))
-                    Text("در حال بروزرسانی…")
+                    Text("در حال بروزرسانی…", fontWeight = FontWeight.SemiBold)
                 } else {
                     Icon(Icons.Outlined.Sync, contentDescription = null)
                     Spacer(Modifier.width(8.dp))
-                    Text("بروزرسانی اشتراک")
+                    Text("بروزرسانی اشتراک", fontWeight = FontWeight.SemiBold)
                 }
             }
-
-            val uriHandler = LocalUriHandler.current
-            val shopUrl = state.shopUrl
             if (!shopUrl.isNullOrBlank()) {
-                Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(10.dp))
                 Button(
                     onClick = { runCatching { uriHandler.openUri(shopUrl) } },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(52.dp),
+                        .height(50.dp),
                     shape = RoundedCornerShape(14.dp),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = TikConnected,
+                        containerColor = if (expired || !hasSub) TikOrange else TikConnected,
                         contentColor = Color.White,
                     ),
                 ) {
                     Icon(Icons.Outlined.ShoppingCart, contentDescription = null)
                     Spacer(Modifier.width(8.dp))
-                    Text(state.shopLabel?.takeIf { it.isNotBlank() } ?: "خرید و تمدید")
+                    Text(
+                        state.shopLabel?.takeIf { it.isNotBlank() } ?: "خرید و تمدید",
+                        fontWeight = FontWeight.SemiBold,
+                    )
                 }
             }
-            val clipboard = LocalClipboardManager.current
-            val context = LocalContext.current
-            fun supportTicketText(): String {
-                val u = state.user?.username ?: TikNetPrefs.getUsername(context) ?: "—"
-                val device = runCatching { TikNetDevice.getOrCreateDeviceId(context).take(8) }.getOrDefault("—")
-                return buildString {
-                    appendLine("TikNet پشتیبانی")
-                    appendLine("user: @$u")
-                    appendLine("version: ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
-                    appendLine("android: ${Build.VERSION.RELEASE} / SDK ${Build.VERSION.SDK_INT}")
-                    appendLine("model: ${Build.MANUFACTURER} ${Build.MODEL}")
-                    appendLine("device: $device")
-                    if (state.profileOffline) appendLine("profile: offline-cache")
-                }.trim()
-            }
-            val tg = state.telegramSupport
-            if (!tg.isNullOrBlank()) {
-                Spacer(Modifier.height(12.dp))
-                OutlinedButton(
-                    onClick = {
-                        clipboard.setText(AnnotatedString(supportTicketText()))
-                        onSupportCopied()
-                        val url = when {
-                            tg.startsWith("http") -> tg
-                            tg.startsWith("tg:") -> tg
-                            tg.startsWith("@") -> "https://t.me/${tg.removePrefix("@")}"
-                            else -> "https://t.me/$tg"
-                        }
-                        runCatching { uriHandler.openUri(url) }
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(48.dp),
-                    shape = RoundedCornerShape(14.dp),
-                    border = BorderStroke(1.dp, TikPrimary),
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = TikPrimary),
-                ) {
-                    Icon(Icons.Outlined.Chat, contentDescription = null)
-                    Spacer(Modifier.width(8.dp))
-                    Text("پشتیبانی (با کپی مشخصات)")
-                }
-            }
+        }
 
-            Spacer(Modifier.height(20.dp))
+        val tg = state.telegramSupport
+        if (!tg.isNullOrBlank()) {
+            Spacer(Modifier.height(12.dp))
+            OutlinedButton(
+                onClick = {
+                    clipboard.setText(AnnotatedString(supportTicketText()))
+                    onSupportCopied()
+                    val url = when {
+                        tg.startsWith("http") -> tg
+                        tg.startsWith("tg:") -> tg
+                        tg.startsWith("@") -> "https://t.me/${tg.removePrefix("@")}"
+                        else -> "https://t.me/$tg"
+                    }
+                    runCatching { uriHandler.openUri(url) }
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(50.dp),
+                shape = RoundedCornerShape(16.dp),
+                border = BorderStroke(1.dp, TikPrimary.copy(alpha = 0.45f)),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = TikOnBg),
+            ) {
+                Box(
+                    Modifier
+                        .size(28.dp)
+                        .clip(CircleShape)
+                        .background(TikPrimary.copy(alpha = 0.16f)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(Icons.Outlined.Chat, contentDescription = null, tint = TikPrimary, modifier = Modifier.size(16.dp))
+                }
+                Spacer(Modifier.width(10.dp))
+                Text("پشتیبانی (با کپی مشخصات)", fontWeight = FontWeight.SemiBold)
+            }
+        }
+
+        if (!state.referralDisabled) {
+            Spacer(Modifier.height(22.dp))
+            AccountSectionLabel("معرف", "دعوت دوستان و دریافت جایزه")
             ReferralSection(
                 state = state,
                 onReload = onReloadReferral,
                 onAttach = onAttachReferral,
             )
+        }
 
-            Spacer(Modifier.height(24.dp))
-            Text("تنظیمات اتصال", color = TikOnBg, fontWeight = FontWeight.Bold, fontSize = 15.sp)
-            Spacer(Modifier.height(8.dp))
-            ConnectionSettingsCard(
-                state = state,
-                onIranDirectChange = onIranDirectChange,
-                onWidgetModeChange = onWidgetModeChange,
-                onWidgetServerChange = onWidgetServerChange,
-                onPinWidget = onPinWidget,
-                onPinCompactWidget = onPinCompactWidget,
+        Spacer(Modifier.height(22.dp))
+        AccountSectionLabel("تنظیمات اتصال", "مسیریابی ایران و ویجت خانه")
+        ConnectionSettingsCard(
+            state = state,
+            onIranDirectChange = onIranDirectChange,
+            onWidgetModeChange = onWidgetModeChange,
+            onWidgetServerChange = onWidgetServerChange,
+            onPinWidget = onPinWidget,
+            onPinCompactWidget = onPinCompactWidget,
+        )
+
+        Spacer(Modifier.height(22.dp))
+        AccountSectionLabel("خدمات", "اعلان‌ها، راهنما و عیب‌یابی")
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(20.dp))
+                .background(TikSurface)
+                .border(1.dp, TikBorder, RoundedCornerShape(20.dp)),
+        ) {
+            ServiceTile(
+                icon = Icons.Outlined.Notifications,
+                label = "اعلان‌ها",
+                onClick = onOpenNotifications,
+                badge = state.unreadCount,
             )
+            HorizontalDivider(color = TikBorder, modifier = Modifier.padding(start = 60.dp))
+            ServiceTile(Icons.Outlined.HelpOutline, "راهنما و سوالات", onOpenFaq)
+            HorizontalDivider(color = TikBorder, modifier = Modifier.padding(start = 60.dp))
+            ServiceTile(Icons.Outlined.Troubleshoot, "عیب‌یابی اینترنت گوشی", onOpenDiagnostics)
+            HorizontalDivider(color = TikBorder, modifier = Modifier.padding(start = 60.dp))
+            ServiceTile(Icons.Outlined.ContentCopy, "کپی اطلاعات پشتیبانی") {
+                clipboard.setText(AnnotatedString(supportTicketText()))
+                onSupportCopied()
+            }
+        }
 
-            Spacer(Modifier.height(24.dp))
-            Text("خدمات", color = TikOnBg, fontWeight = FontWeight.Bold, fontSize = 15.sp)
-            Spacer(Modifier.height(8.dp))
-            Column(
+        Spacer(Modifier.height(18.dp))
+        OutlinedButton(
+            onClick = onLogoutClick,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(50.dp),
+            shape = RoundedCornerShape(16.dp),
+            border = BorderStroke(1.dp, TikDanger.copy(alpha = 0.55f)),
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = TikDanger),
+        ) {
+            Icon(Icons.AutoMirrored.Outlined.Logout, contentDescription = null)
+            Spacer(Modifier.width(8.dp))
+            Text("خروج از حساب", fontWeight = FontWeight.SemiBold)
+        }
+
+        Spacer(Modifier.height(14.dp))
+        Text(
+            "TikNet  ·  نسخه ${TikNetJalali.toPersianDigits(state.appVersion)}",
+            color = TikMuted.copy(alpha = 0.85f),
+            fontSize = 12.sp,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth(),
+        )
+    }
+}
+
+@Composable
+private fun AccountSectionLabel(title: String, hint: String? = null) {
+    Column(Modifier.padding(bottom = 10.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
                 Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(TikSurface)
-                    .border(1.dp, TikBorder, RoundedCornerShape(14.dp)),
-            ) {
-                ServiceTile(Icons.Outlined.Notifications, "اعلان‌ها", onOpenNotifications)
-                HorizontalDivider(color = TikBorder, modifier = Modifier.padding(start = 56.dp))
-                ServiceTile(Icons.Outlined.HelpOutline, "راهنما و سوالات", onOpenFaq)
-                HorizontalDivider(color = TikBorder, modifier = Modifier.padding(start = 56.dp))
-                ServiceTile(Icons.Outlined.Troubleshoot, "عیب‌یابی اینترنت گوشی", onOpenDiagnostics)
-                HorizontalDivider(color = TikBorder, modifier = Modifier.padding(start = 56.dp))
-                ServiceTile(Icons.Outlined.ContentCopy, "کپی اطلاعات پشتیبانی") {
-                    clipboard.setText(AnnotatedString(supportTicketText()))
-                    onSupportCopied()
-                }
-            }
-
-            Spacer(Modifier.height(20.dp))
-            OutlinedButton(
-                onClick = onLogoutClick,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(48.dp),
-                shape = RoundedCornerShape(14.dp),
-                border = BorderStroke(1.dp, TikDanger),
-                colors = ButtonDefaults.outlinedButtonColors(contentColor = TikDanger),
-            ) {
-                Icon(Icons.AutoMirrored.Outlined.Logout, contentDescription = null)
-                Spacer(Modifier.width(8.dp))
-                Text("خروج از حساب")
-            }
-
-            Spacer(Modifier.height(16.dp))
-            Text(
-                "نسخه ${TikNetJalali.toPersianDigits(state.appVersion)}",
-                color = TikMuted,
-                fontSize = 13.sp,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth(),
+                    .width(3.dp)
+                    .height(16.dp)
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(TikPrimary),
             )
+            Spacer(Modifier.width(8.dp))
+            Text(title, color = TikOnBg, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+        }
+        if (!hint.isNullOrBlank()) {
+            Spacer(Modifier.height(4.dp))
+            Text(hint, color = TikMuted, fontSize = 12.sp, modifier = Modifier.padding(start = 11.dp))
         }
     }
 }
@@ -2092,14 +2243,12 @@ private fun ReferralSection(
     val clipboard = LocalClipboardManager.current
     var attachCode by remember { mutableStateOf("") }
 
-    Text("معرف", color = TikOnBg, fontWeight = FontWeight.Bold, fontSize = 15.sp)
-    Spacer(Modifier.height(8.dp))
     Column(
         Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
+            .clip(RoundedCornerShape(16.dp))
             .background(TikSurface)
-            .border(1.dp, TikBorder, RoundedCornerShape(14.dp))
+            .border(1.dp, TikBorder, RoundedCornerShape(16.dp))
             .padding(16.dp),
     ) {
         when {
@@ -2557,21 +2706,29 @@ private fun StatTile(modifier: Modifier, icon: ImageVector, label: String, value
     Column(
         modifier
             .clip(RoundedCornerShape(14.dp))
-            .background(TikSurface)
+            .background(TikSurface2)
             .border(1.dp, TikBorder, RoundedCornerShape(14.dp))
-            .padding(14.dp),
+            .padding(12.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(icon, contentDescription = null, tint = TikPrimary, modifier = Modifier.size(16.dp))
-            Spacer(Modifier.width(6.dp))
-            Text(label, color = TikMuted, fontSize = 12.sp)
+            Box(
+                Modifier
+                    .size(26.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(TikPrimary.copy(alpha = 0.14f)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(icon, contentDescription = null, tint = TikPrimary, modifier = Modifier.size(14.dp))
+            }
+            Spacer(Modifier.width(7.dp))
+            Text(label, color = TikMuted, fontSize = 11.sp)
         }
-        Spacer(Modifier.height(6.dp))
+        Spacer(Modifier.height(8.dp))
         Text(
             value,
             color = TikOnBg,
             fontWeight = FontWeight.SemiBold,
-            fontSize = 15.sp,
+            fontSize = 14.sp,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
         )
@@ -2584,23 +2741,33 @@ private fun TrafficCard(user: TikNetUserInfo?) {
     val limit = user?.trafficLimitBytes
     val label = TikNetJalali.formatTraffic(used, limit)
     val ratio = TikNetJalali.trafficRatio(used, limit)
-    val barColor = if (ratio >= 0.9f) TikDanger else TikPrimary
+    val barColor = when {
+        ratio >= 0.9f -> TikDanger
+        ratio >= 0.7f -> TikOrange
+        else -> TikPrimary
+    }
+    val percent = TikNetJalali.toPersianDigits(((ratio * 100f).toInt().coerceIn(0, 100)).toString())
 
     Column(
         Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(14.dp))
-            .background(TikSurface)
+            .background(TikSurface2)
             .border(1.dp, TikBorder, RoundedCornerShape(14.dp))
             .padding(14.dp),
     ) {
-        Text("مصرف حجم", color = TikMuted, fontSize = 12.sp)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("مصرف حجم", color = TikMuted, fontSize = 12.sp, modifier = Modifier.weight(1f))
+            if ((limit ?: 0) > 0) {
+                Text("$percent٪", color = barColor, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+            }
+        }
         Spacer(Modifier.height(6.dp))
         Text(
             TikNetJalali.toPersianDigits(label),
             color = TikOnBg,
             fontWeight = FontWeight.SemiBold,
-            fontSize = 16.sp,
+            fontSize = 15.sp,
         )
         if ((limit ?: 0) > 0) {
             Spacer(Modifier.height(10.dp))
@@ -2611,25 +2778,30 @@ private fun TrafficCard(user: TikNetUserInfo?) {
                     .height(8.dp)
                     .clip(RoundedCornerShape(8.dp)),
                 color = barColor,
-                trackColor = TikBorder,
+                trackColor = Color.White.copy(alpha = 0.08f),
             )
         }
     }
 }
 
 @Composable
-private fun ServiceTile(icon: ImageVector, label: String, onClick: () -> Unit) {
+private fun ServiceTile(
+    icon: ImageVector,
+    label: String,
+    onClick: () -> Unit,
+    badge: Int = 0,
+) {
     Row(
         Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 14.dp),
+            .padding(horizontal = 14.dp, vertical = 13.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
             Modifier
-                .size(36.dp)
-                .clip(CircleShape)
+                .size(38.dp)
+                .clip(RoundedCornerShape(12.dp))
                 .background(TikPrimary.copy(alpha = 0.12f)),
             contentAlignment = Alignment.Center,
         ) {
@@ -2637,7 +2809,27 @@ private fun ServiceTile(icon: ImageVector, label: String, onClick: () -> Unit) {
         }
         Spacer(Modifier.width(12.dp))
         Text(label, color = TikOnBg, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
-        Icon(Icons.Outlined.ExpandMore, contentDescription = null, tint = TikMuted)
+        if (badge > 0) {
+            Box(
+                Modifier
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(TikDanger)
+                    .padding(horizontal = 7.dp, vertical = 2.dp),
+            ) {
+                Text(
+                    TikNetJalali.toLatinDigits(if (badge > 99) "99+" else badge.toString()),
+                    color = Color.White,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+            Spacer(Modifier.width(8.dp))
+        }
+        Icon(
+            Icons.AutoMirrored.Outlined.KeyboardArrowLeft,
+            contentDescription = null,
+            tint = TikMuted,
+        )
     }
 }
 
