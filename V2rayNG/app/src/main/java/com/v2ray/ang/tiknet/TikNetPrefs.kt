@@ -22,6 +22,8 @@ object TikNetPrefs {
     private const val KEY_WIDGET_CONNECTING = "widget_connecting"
     private const val KEY_WIDGET_SMART_PENDING = "widget_smart_pending"
     private const val KEY_IRAN_DIRECT = "iran_direct_routing_enabled"
+    private const val KEY_WANT_CONNECTED = "want_connected"
+    private const val KEY_RECONNECT_ON_NETWORK = "reconnect_on_network"
 
     const val WIDGET_MODE_CURRENT = "current"
     const val WIDGET_MODE_SMART = "smart"
@@ -192,5 +194,21 @@ object TikNetPrefs {
     fun setIranDirectEnabled(ctx: Context, enabled: Boolean) {
         // commit() so a following read cannot see a stale value (apply() is async).
         prefs(ctx).edit().putBoolean(KEY_IRAN_DIRECT, enabled).commit()
+    }
+
+    /** User last asked the tunnel to stay up (in-app or widget). Cleared on intentional disconnect. */
+    fun isWantConnected(ctx: Context): Boolean =
+        prefs(ctx).getBoolean(KEY_WANT_CONNECTED, false)
+
+    fun setWantConnected(ctx: Context, want: Boolean) {
+        prefs(ctx).edit().putBoolean(KEY_WANT_CONNECTED, want).apply()
+    }
+
+    /** Default true — reconnect when underlay network returns after a drop. */
+    fun isReconnectOnNetworkEnabled(ctx: Context): Boolean =
+        prefs(ctx).getBoolean(KEY_RECONNECT_ON_NETWORK, true)
+
+    fun setReconnectOnNetworkEnabled(ctx: Context, enabled: Boolean) {
+        prefs(ctx).edit().putBoolean(KEY_RECONNECT_ON_NETWORK, enabled).apply()
     }
 }

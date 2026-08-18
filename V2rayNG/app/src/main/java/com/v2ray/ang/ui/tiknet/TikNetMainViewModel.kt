@@ -31,7 +31,9 @@ import com.v2ray.ang.tiknet.TikNetErrors
 import com.v2ray.ang.tiknet.TikNetPrefs
 import com.v2ray.ang.tiknet.TikNetPingCache
 import com.v2ray.ang.tiknet.TikNetReferralInfo
+import com.v2ray.ang.tiknet.TikNetSession
 import com.v2ray.ang.tiknet.TikNetSync
+import com.v2ray.ang.tiknet.TikNetUsageHistory
 import com.v2ray.ang.tiknet.TikNetUserInfo
 import com.v2ray.ang.ui.main.MainRepository
 import com.v2ray.ang.ui.main.MainServiceEvent
@@ -124,6 +126,14 @@ data class TikNetMainUiState(
     val iranDirectEnabled: Boolean = true,
     val widgetMode: String = TikNetPrefs.WIDGET_MODE_CURRENT,
     val widgetServerGuid: String? = null,
+    val reconnectOnNetwork: Boolean = true,
+    val usageHistory: TikNetUsageHistory? = null,
+    val usageLoading: Boolean = false,
+    val usageMissing: Boolean = false,
+    val sessions: List<TikNetSession> = emptyList(),
+    val sessionsLoading: Boolean = false,
+    val sessionsError: String? = null,
+    val sessionRevokingId: Int? = null,
 ) {
     val isUpdateBlocking: Boolean
         get() = when (val update = appUpdate) {
@@ -159,6 +169,7 @@ class TikNetMainViewModel(
     private var iranRoutingJob: Job? = null
     private val iranRoutingSeq = AtomicInteger(0)
     private val iranRoutingLock = Any()
+    private var networkReconnectAttempts = 0
 
     init {
         // Enable live speed notifications → traffic broadcast for details
@@ -179,6 +190,7 @@ class TikNetMainViewModel(
                     iranDirectEnabled = TikNetPrefs.isIranDirectEnabled(application),
                     widgetMode = TikNetPrefs.getWidgetMode(application),
                     widgetServerGuid = TikNetPrefs.getWidgetServerGuid(application),
+                    reconnectOnNetwork = TikNetPrefs.isReconnectOnNetworkEnabled(application),
                 )
             }
         } else {
@@ -188,6 +200,7 @@ class TikNetMainViewModel(
                     iranDirectEnabled = TikNetPrefs.isIranDirectEnabled(application),
                     widgetMode = TikNetPrefs.getWidgetMode(application),
                     widgetServerGuid = TikNetPrefs.getWidgetServerGuid(application),
+                    reconnectOnNetwork = TikNetPrefs.isReconnectOnNetworkEnabled(application),
                 )
             }
         }
@@ -221,6 +234,8 @@ class TikNetMainViewModel(
                     MainServiceEvent.StateRunning,
                     MainServiceEvent.StateStartSuccess -> {
                         TikNetPingCache.clearFailover(getApplication())
+                        TikNetPrefs.setWantConnected(getApplication(), true)
+                        networkReconnectAttempts = 0
                         _ui.update {
                             it.copy(
                                 phase = TikNetConnPhase.Connected,
@@ -745,6 +760,7 @@ class TikNetMainViewModel(
         pendingSmartConnect = false
         pendingSmartSwitch = false
         lastSmartConnectAtMs = System.currentTimeMillis()
+        TikNetPrefs.setWantConnected(getApplication(), false)
         runCatching {
             MessageHelper.sendMsg2TestService(
                 getApplication(),
@@ -778,6 +794,7 @@ class TikNetMainViewModel(
     fun markDisconnecting() {
         pendingSmartConnect = false
         pendingSmartSwitch = false
+        TikNetPrefs.setWantConnected(getApplication(), false)
         _ui.update {
             it.copy(phase = TikNetConnPhase.Disconnecting, busy = true, error = null, smartPicking = false)
         }
@@ -857,6 +874,7 @@ class TikNetMainViewModel(
                         entitlementAlert = alert,
                     )
                 }
+                loadUsageHistory()
             } catch (e: Exception) {
                 android.util.Log.e("TikNet", "loadUser failed: ${e.message}", e)
                 val cached = TikNetPrefs.getCachedProfile(getApplication())
@@ -1246,12 +1264,126 @@ class TikNetMainViewModel(
         TikNetDiagnostics.openSettings(getApplication(), action)
     }
 
+    fun loadUsageHistory() {
+        viewModelScope.launch {
+            val ctx = getApplication<Application>()
+            val base = TikNetPrefs.getBaseUrl(ctx)
+            val token = TikNetPrefs.getAccessToken(ctx)
+            if (base.isNullOrBlank() || token.isNullOrBlank()) return@launch
+            _ui.update { it.copy(usageLoading = true) }
+            try {
+                val hist = withContext(Dispatchers.IO) {
+                    TikNetApi.getUsageHistory(base, token, days = 14)
+                }
+                _ui.update {
+                    it.copy(usageHistory = hist, usageLoading = false, usageMissing = false)
+                }
+            } catch (e: TikNetApiException) {
+                _ui.update {
+                    it.copy(
+                        usageLoading = false,
+                        usageMissing = e.statusCode == 404,
+                        usageHistory = if (e.statusCode == 404) null else it.usageHistory,
+                    )
+                }
+            } catch (_: Exception) {
+                _ui.update { it.copy(usageLoading = false) }
+            }
+        }
+    }
+
+    fun loadSessions() {
+        viewModelScope.launch {
+            val ctx = getApplication<Application>()
+            val base = TikNetPrefs.getBaseUrl(ctx)
+            val token = TikNetPrefs.getAccessToken(ctx)
+            if (base.isNullOrBlank() || token.isNullOrBlank()) return@launch
+            _ui.update { it.copy(sessionsLoading = true, sessionsError = null) }
+            try {
+                val list = withContext(Dispatchers.IO) {
+                    TikNetApi.listSessions(base, token)
+                }
+                _ui.update {
+                    it.copy(sessions = list, sessionsLoading = false, sessionsError = null)
+                }
+            } catch (e: Exception) {
+                _ui.update {
+                    it.copy(
+                        sessionsLoading = false,
+                        sessionsError = TikNetErrors.message(e, "لیست نشست‌ها دریافت نشد"),
+                    )
+                }
+            }
+        }
+    }
+
+    fun revokeSession(sessionId: Int) {
+        if (_ui.value.sessions.any { it.id == sessionId && it.isCurrent }) return
+        viewModelScope.launch {
+            val ctx = getApplication<Application>()
+            val base = TikNetPrefs.getBaseUrl(ctx)
+            val token = TikNetPrefs.getAccessToken(ctx)
+            if (base.isNullOrBlank() || token.isNullOrBlank()) return@launch
+            _ui.update { it.copy(sessionRevokingId = sessionId, sessionsError = null) }
+            try {
+                withContext(Dispatchers.IO) {
+                    TikNetApi.revokeSession(base, token, sessionId)
+                }
+                _ui.update {
+                    it.copy(
+                        sessions = it.sessions.filter { s -> s.id != sessionId },
+                        sessionRevokingId = null,
+                        syncMessage = "نشست بسته شد",
+                    )
+                }
+            } catch (e: Exception) {
+                _ui.update {
+                    it.copy(
+                        sessionRevokingId = null,
+                        sessionsError = TikNetErrors.message(e, "خروج از نشست ناموفق بود"),
+                    )
+                }
+            }
+        }
+    }
+
+    fun setReconnectOnNetworkEnabled(enabled: Boolean) {
+        TikNetPrefs.setReconnectOnNetworkEnabled(getApplication(), enabled)
+        _ui.update { it.copy(reconnectOnNetwork = enabled) }
+    }
+
+    fun onUnderlayNetworkAvailable() {
+        val ctx = getApplication<Application>()
+        if (!TikNetPrefs.isReconnectOnNetworkEnabled(ctx)) return
+        if (!TikNetPrefs.isWantConnected(ctx)) return
+        if (!TikNetPrefs.isLoggedIn(ctx)) return
+        val user = _ui.value.user
+        if (user?.isExpired == true || user?.hasSubscription == false) return
+        val phase = _ui.value.phase
+        if (phase == TikNetConnPhase.Connected ||
+            phase == TikNetConnPhase.Connecting ||
+            phase == TikNetConnPhase.Disconnecting
+        ) {
+            return
+        }
+        if (runCatching { CoreServiceManager.isRunning() }.getOrDefault(false)) return
+        if (networkReconnectAttempts >= 2) return
+        networkReconnectAttempts += 1
+        _ui.update { it.copy(syncMessage = "شبکه عوض شد؛ دوباره وصل می‌شود…") }
+        requestConnect()
+    }
+
+    fun onUnderlayNetworkLost() {
+        networkReconnectAttempts = 0
+    }
+
     private fun isTikNetVpnActive(): Boolean {
         return _ui.value.phase == TikNetConnPhase.Connected ||
             runCatching { CoreServiceManager.isRunning() }.getOrElse { false }
     }
 
     fun logout() {
+        TikNetPrefs.setWantConnected(getApplication(), false)
         TikNetPrefs.clearSession(getApplication())
     }
 

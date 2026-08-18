@@ -73,6 +73,7 @@ import androidx.compose.material.icons.outlined.Chat
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Dns
+import androidx.compose.material.icons.outlined.Devices
 import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.Event
 import androidx.compose.material.icons.outlined.ExpandLess
@@ -87,6 +88,7 @@ import androidx.compose.material.icons.outlined.Public
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Route
 import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Shield
 import androidx.compose.material.icons.outlined.ShoppingCart
 import androidx.compose.material.icons.outlined.Speed
@@ -131,8 +133,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -167,6 +172,9 @@ import com.v2ray.ang.tiknet.TikNetFaqItem
 import com.v2ray.ang.tiknet.TikNetJalali
 import com.v2ray.ang.tiknet.TikNetMessages
 import com.v2ray.ang.tiknet.TikNetNotificationItem
+import com.v2ray.ang.tiknet.TikNetSession
+import com.v2ray.ang.tiknet.TikNetUsageHistory
+import com.v2ray.ang.tiknet.TikNetUsagePoint
 import com.v2ray.ang.tiknet.TikNetUserInfo
 
 private val TikBg = Color(0xFF0D0D0D)
@@ -184,7 +192,7 @@ private val TikOrange = Color(0xFFF97316)
 
 private enum class TikNetTab { Connect, Details, Filter, Account }
 
-private enum class AccountSheet { None, Notifications, Faq, Diagnostics }
+private enum class AccountSheet { None, Notifications, Faq, Diagnostics, Settings, Sessions }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -255,6 +263,7 @@ fun TikNetShell(
                         LaunchedEffect(Unit) {
                             viewModel.loadUser(silent = true)
                             viewModel.loadReferral()
+                            viewModel.loadUsageHistory()
                         }
                         AccountTab(
                             state = state,
@@ -268,18 +277,14 @@ fun TikNetShell(
                                 accountSheet = AccountSheet.Faq
                                 viewModel.loadFaq()
                             },
-                            onOpenDiagnostics = {
-                                accountSheet = AccountSheet.Diagnostics
-                                viewModel.runDiagnostics()
+                            onOpenSettings = { accountSheet = AccountSheet.Settings },
+                            onOpenSessions = {
+                                accountSheet = AccountSheet.Sessions
+                                viewModel.loadSessions()
                             },
                             onReloadReferral = { viewModel.loadReferral(force = true) },
                             onAttachReferral = { viewModel.attachReferralCode(it) },
                             onSupportCopied = { viewModel.showMessage("اطلاعات پشتیبانی کپی شد") },
-                            onIranDirectChange = { viewModel.setIranDirectEnabled(it) },
-                            onWidgetModeChange = { viewModel.setWidgetMode(it) },
-                            onWidgetServerChange = { viewModel.setWidgetServerGuid(it) },
-                            onPinWidget = { viewModel.pinHomeWidget(com.v2ray.ang.tiknet.TikNetWidgetPin.Kind.Full) },
-                            onPinCompactWidget = { viewModel.pinHomeWidget(com.v2ray.ang.tiknet.TikNetWidgetPin.Kind.Compact) },
                         )
                     }
                 }
@@ -373,6 +378,50 @@ fun TikNetShell(
                         onAutoFixAll = { viewModel.autoFixDiagnostics() },
                         onAutoFixItem = { viewModel.autoFixDiagItem(it) },
                         onOpenSettings = { viewModel.openSettingsTarget(it) },
+                        onClose = { accountSheet = AccountSheet.None },
+                    )
+                }
+            }
+            AccountSheet.Settings -> {
+                val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+                ModalBottomSheet(
+                    onDismissRequest = { accountSheet = AccountSheet.None },
+                    sheetState = sheetState,
+                    containerColor = TikBg,
+                    contentColor = TikOnBg,
+                ) {
+                    SettingsSheet(
+                        state = state,
+                        onIranDirectChange = { viewModel.setIranDirectEnabled(it) },
+                        onReconnectChange = { viewModel.setReconnectOnNetworkEnabled(it) },
+                        onWidgetModeChange = { viewModel.setWidgetMode(it) },
+                        onWidgetServerChange = { viewModel.setWidgetServerGuid(it) },
+                        onPinWidget = { viewModel.pinHomeWidget(com.v2ray.ang.tiknet.TikNetWidgetPin.Kind.Full) },
+                        onPinCompactWidget = { viewModel.pinHomeWidget(com.v2ray.ang.tiknet.TikNetWidgetPin.Kind.Compact) },
+                        onOpenDiagnostics = {
+                            accountSheet = AccountSheet.Diagnostics
+                            viewModel.runDiagnostics()
+                        },
+                        onSupportCopied = { viewModel.showMessage("اطلاعات پشتیبانی کپی شد") },
+                        onClose = { accountSheet = AccountSheet.None },
+                    )
+                }
+            }
+            AccountSheet.Sessions -> {
+                val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+                ModalBottomSheet(
+                    onDismissRequest = { accountSheet = AccountSheet.None },
+                    sheetState = sheetState,
+                    containerColor = TikSurface,
+                    contentColor = TikOnBg,
+                ) {
+                    SessionsSheet(
+                        sessions = state.sessions,
+                        loading = state.sessionsLoading,
+                        error = state.sessionsError,
+                        revokingId = state.sessionRevokingId,
+                        onReload = { viewModel.loadSessions() },
+                        onRevoke = { viewModel.revokeSession(it) },
                         onClose = { accountSheet = AccountSheet.None },
                     )
                 }
@@ -1899,15 +1948,11 @@ private fun AccountTab(
     onLogoutClick: () -> Unit,
     onOpenNotifications: () -> Unit,
     onOpenFaq: () -> Unit,
-    onOpenDiagnostics: () -> Unit,
+    onOpenSettings: () -> Unit,
+    onOpenSessions: () -> Unit,
     onReloadReferral: () -> Unit,
     onAttachReferral: (String) -> Unit,
     onSupportCopied: () -> Unit = {},
-    onIranDirectChange: (Boolean) -> Unit = {},
-    onWidgetModeChange: (String) -> Unit = {},
-    onWidgetServerChange: (String?) -> Unit = {},
-    onPinWidget: () -> Unit = {},
-    onPinCompactWidget: () -> Unit = {},
 ) {
     val user = state.user
     val expired = user?.isExpired == true
@@ -1949,7 +1994,7 @@ private fun AccountTab(
     ) {
         Text("حساب من", color = TikOnBg, fontSize = 22.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(4.dp))
-        Text("پروفایل، اشتراک و تنظیمات دستگاه", color = TikMuted, fontSize = 13.sp)
+        Text("پروفایل، اشتراک و خدمات حساب", color = TikMuted, fontSize = 13.sp)
 
         Spacer(Modifier.height(16.dp))
         Row(
@@ -2058,6 +2103,15 @@ private fun AccountTab(
                 Spacer(Modifier.height(10.dp))
                 TrafficCard(user)
             }
+            if (state.usageLoading && state.usageHistory == null) {
+                Spacer(Modifier.height(10.dp))
+                Box(Modifier.fillMaxWidth().padding(vertical = 8.dp), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(color = TikPrimary, modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
+                }
+            } else if (state.usageHistory != null) {
+                Spacer(Modifier.height(10.dp))
+                UsageHistoryCard(state.usageHistory)
+            }
 
             Spacer(Modifier.height(14.dp))
             Button(
@@ -2149,18 +2203,7 @@ private fun AccountTab(
         }
 
         Spacer(Modifier.height(22.dp))
-        AccountSectionLabel("تنظیمات اتصال", "مسیریابی ایران و ویجت خانه")
-        ConnectionSettingsCard(
-            state = state,
-            onIranDirectChange = onIranDirectChange,
-            onWidgetModeChange = onWidgetModeChange,
-            onWidgetServerChange = onWidgetServerChange,
-            onPinWidget = onPinWidget,
-            onPinCompactWidget = onPinCompactWidget,
-        )
-
-        Spacer(Modifier.height(22.dp))
-        AccountSectionLabel("خدمات", "اعلان‌ها، راهنما و عیب‌یابی")
+        AccountSectionLabel("خدمات", "اعلان‌ها، دستگاه‌ها و تنظیمات")
         Column(
             Modifier
                 .fillMaxWidth()
@@ -2175,14 +2218,11 @@ private fun AccountTab(
                 badge = state.unreadCount,
             )
             HorizontalDivider(color = TikBorder, modifier = Modifier.padding(start = 60.dp))
+            ServiceTile(Icons.Outlined.Devices, "دستگاه‌های واردشده", onClick = onOpenSessions)
+            HorizontalDivider(color = TikBorder, modifier = Modifier.padding(start = 60.dp))
             ServiceTile(Icons.Outlined.HelpOutline, "راهنما و سوالات", onClick = onOpenFaq)
             HorizontalDivider(color = TikBorder, modifier = Modifier.padding(start = 60.dp))
-            ServiceTile(Icons.Outlined.Troubleshoot, "عیب‌یابی اینترنت گوشی", onClick = onOpenDiagnostics)
-            HorizontalDivider(color = TikBorder, modifier = Modifier.padding(start = 60.dp))
-            ServiceTile(Icons.Outlined.ContentCopy, "کپی اطلاعات پشتیبانی", onClick = {
-                clipboard.setText(AnnotatedString(supportTicketText()))
-                onSupportCopied()
-            })
+            ServiceTile(Icons.Outlined.Settings, "تنظیمات", onClick = onOpenSettings)
         }
 
         Spacer(Modifier.height(18.dp))
@@ -2455,12 +2495,51 @@ private fun ReferralProgressBox(info: TikNetReferralInfo) {
 private fun ConnectionSettingsCard(
     state: TikNetMainUiState,
     onIranDirectChange: (Boolean) -> Unit,
+    onReconnectChange: (Boolean) -> Unit = {},
     onWidgetModeChange: (String) -> Unit,
     onWidgetServerChange: (String?) -> Unit,
     onPinWidget: () -> Unit = {},
     onPinCompactWidget: () -> Unit = {},
 ) {
     Column(Modifier.fillMaxWidth()) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(14.dp))
+                .background(TikSurface)
+                .border(1.dp, TikBorder, RoundedCornerShape(14.dp))
+                .padding(14.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        "وصل شدن دوباره وقتی شبکه برگشت",
+                        color = TikOnBg,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 14.sp,
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "اگر اینترنت قطع شد و تونل افتاد، بعد از برگشت شبکه دوباره وصل می‌شود.",
+                        color = TikMuted,
+                        fontSize = 12.sp,
+                        lineHeight = 17.sp,
+                    )
+                }
+                Switch(
+                    checked = state.reconnectOnNetwork,
+                    onCheckedChange = onReconnectChange,
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = Color.White,
+                        checkedTrackColor = TikPrimary,
+                        uncheckedThumbColor = Color.White,
+                        uncheckedTrackColor = TikMuted.copy(alpha = 0.35f),
+                    ),
+                )
+            }
+        }
+
+        Spacer(Modifier.height(12.dp))
         Column(
             Modifier
                 .fillMaxWidth()
@@ -2785,6 +2864,101 @@ private fun TrafficCard(user: TikNetUserInfo?) {
 }
 
 @Composable
+private fun UsageHistoryCard(history: TikNetUsageHistory?) {
+    val points = history?.points.orEmpty()
+    val used = history?.usedGb ?: 0.0
+    val limit = history?.limitGb ?: 0.0
+    val periodDelta = if (points.size >= 2) {
+        (points.last().usedGb - points.first().usedGb).coerceAtLeast(0.0)
+    } else {
+        null
+    }
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(TikSurface2)
+            .border(1.dp, TikBorder, RoundedCornerShape(14.dp))
+            .padding(14.dp),
+    ) {
+        Text("مصرف ۱۴ روز", color = TikMuted, fontSize = 12.sp)
+        Spacer(Modifier.height(4.dp))
+        Text(
+            buildString {
+                append(TikNetJalali.formatGb(used))
+                if (limit > 0) {
+                    append(" / ")
+                    append(TikNetJalali.formatGb(limit))
+                }
+            },
+            color = TikOnBg,
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 15.sp,
+        )
+        if (periodDelta != null) {
+            Spacer(Modifier.height(2.dp))
+            Text(
+                "در این بازه: ${TikNetJalali.formatGb(periodDelta)}",
+                color = TikMuted,
+                fontSize = 12.sp,
+            )
+        }
+        Spacer(Modifier.height(12.dp))
+        if (points.size < 2) {
+            Text("هنوز تاریخچه‌ای ثبت نشده", color = TikMuted, fontSize = 12.sp)
+        } else {
+            UsageSparkline(points = points, limitGb = limit)
+        }
+    }
+}
+
+@Composable
+private fun UsageSparkline(points: List<TikNetUsagePoint>, limitGb: Double) {
+    val vals = points.map { it.usedGb.toFloat() }
+    val maxY = (vals.maxOrNull() ?: 0.01f)
+        .coerceAtLeast(if (limitGb > 0) limitGb.toFloat() else 0.01f)
+        .times(1.08f)
+        .coerceAtLeast(0.05f)
+    Canvas(
+        Modifier
+            .fillMaxWidth()
+            .height(92.dp),
+    ) {
+        val n = vals.size
+        fun xAt(i: Int) = if (n <= 1) size.width / 2f else size.width * i / (n - 1).toFloat()
+        fun yAt(v: Float) = size.height - (size.height * (v / maxY).coerceIn(0f, 1f))
+        val line = Path()
+        val fill = Path()
+        vals.forEachIndexed { i, v ->
+            val x = xAt(i)
+            val y = yAt(v)
+            if (i == 0) {
+                line.moveTo(x, y)
+                fill.moveTo(x, size.height)
+                fill.lineTo(x, y)
+            } else {
+                line.lineTo(x, y)
+                fill.lineTo(x, y)
+            }
+        }
+        fill.lineTo(xAt(n - 1), size.height)
+        fill.close()
+        drawPath(fill, TikPrimary.copy(alpha = 0.22f))
+        drawPath(line, TikPrimary, style = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round))
+        if (limitGb > 0) {
+            val ly = yAt(limitGb.toFloat())
+            drawLine(
+                color = TikMuted.copy(alpha = 0.55f),
+                start = Offset(0f, ly),
+                end = Offset(size.width, ly),
+                strokeWidth = 1.5.dp.toPx(),
+                pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 8f)),
+            )
+        }
+    }
+}
+
+@Composable
 private fun ServiceTile(
     icon: ImageVector,
     label: String,
@@ -2834,6 +3008,209 @@ private fun ServiceTile(
 }
 
 /* ───────────────────────── Account sheets ───────────────────────── */
+
+@Composable
+private fun SettingsSheet(
+    state: TikNetMainUiState,
+    onIranDirectChange: (Boolean) -> Unit,
+    onReconnectChange: (Boolean) -> Unit,
+    onWidgetModeChange: (String) -> Unit,
+    onWidgetServerChange: (String?) -> Unit,
+    onPinWidget: () -> Unit,
+    onPinCompactWidget: () -> Unit,
+    onOpenDiagnostics: () -> Unit,
+    onSupportCopied: () -> Unit,
+    onClose: () -> Unit,
+) {
+    val clipboard = LocalClipboardManager.current
+    val context = LocalContext.current
+    fun supportTicketText(): String {
+        val u = state.user?.username ?: TikNetPrefs.getUsername(context) ?: "—"
+        val device = runCatching { TikNetDevice.getOrCreateDeviceId(context).take(8) }.getOrDefault("—")
+        return buildString {
+            appendLine("TikNet پشتیبانی")
+            appendLine("user: @$u")
+            appendLine("version: ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
+            appendLine("android: ${Build.VERSION.RELEASE} / SDK ${Build.VERSION.SDK_INT}")
+            appendLine("model: ${Build.MANUFACTURER} ${Build.MODEL}")
+            appendLine("device: $device")
+            if (state.profileOffline) appendLine("profile: offline-cache")
+        }.trim()
+    }
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .fillMaxHeight(0.92f)
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 16.dp)
+            .padding(bottom = 24.dp),
+    ) {
+        SheetHeader("تنظیمات", onClose)
+        AccountSectionLabel("اتصال", "مسیریابی و وصل مجدد")
+        ConnectionSettingsCard(
+            state = state,
+            onIranDirectChange = onIranDirectChange,
+            onReconnectChange = onReconnectChange,
+            onWidgetModeChange = onWidgetModeChange,
+            onWidgetServerChange = onWidgetServerChange,
+            onPinWidget = onPinWidget,
+            onPinCompactWidget = onPinCompactWidget,
+        )
+        Spacer(Modifier.height(18.dp))
+        AccountSectionLabel("پشتیبانی دستگاه", "عیب‌یابی و اطلاعات")
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(20.dp))
+                .background(TikSurface2)
+                .border(1.dp, TikBorder, RoundedCornerShape(20.dp)),
+        ) {
+            ServiceTile(Icons.Outlined.Troubleshoot, "عیب‌یابی اینترنت گوشی", onClick = onOpenDiagnostics)
+            HorizontalDivider(color = TikBorder, modifier = Modifier.padding(start = 60.dp))
+            ServiceTile(Icons.Outlined.ContentCopy, "کپی اطلاعات پشتیبانی", onClick = {
+                clipboard.setText(AnnotatedString(supportTicketText()))
+                onSupportCopied()
+            })
+        }
+    }
+}
+
+@Composable
+private fun SessionsSheet(
+    sessions: List<TikNetSession>,
+    loading: Boolean,
+    error: String?,
+    revokingId: Int?,
+    onReload: () -> Unit,
+    onRevoke: (Int) -> Unit,
+    onClose: () -> Unit,
+) {
+    var pendingRevoke by remember { mutableStateOf<TikNetSession?>(null) }
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .fillMaxHeight(0.8f)
+            .padding(bottom = 16.dp),
+    ) {
+        SheetHeader("دستگاه‌های واردشده", onClose)
+        when {
+            loading && sessions.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator(color = TikPrimary)
+            }
+            error != null && sessions.isEmpty() -> Column(
+                Modifier.fillMaxSize().padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+            ) {
+                Text(error, color = TikMuted, textAlign = TextAlign.Center)
+                Spacer(Modifier.height(8.dp))
+                TextButton(onClick = onReload) {
+                    Text("تلاش دوباره", color = TikPrimary)
+                }
+            }
+            sessions.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text("نشست فعالی نیست.", color = TikMuted)
+            }
+            else -> LazyColumn(
+                contentPadding = PaddingValues(16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                if (!error.isNullOrBlank()) {
+                    item {
+                        Text(error, color = TikDanger, fontSize = 12.sp)
+                    }
+                }
+                items(sessions, key = { it.id }) { session ->
+                    SessionRow(
+                        session = session,
+                        revoking = revokingId == session.id,
+                        onRevoke = { pendingRevoke = session },
+                    )
+                }
+            }
+        }
+    }
+    pendingRevoke?.let { target ->
+        AlertDialog(
+            onDismissRequest = { pendingRevoke = null },
+            containerColor = TikSurface,
+            titleContentColor = TikOnBg,
+            textContentColor = TikMuted,
+            title = { Text("خروج از این نشست؟") },
+            text = { Text("این دستگاه از حساب خارج می‌شود. اتصال فعلی شما قطع نمی‌شود.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        pendingRevoke = null
+                        onRevoke(target.id)
+                    },
+                ) {
+                    Text("خروج", color = TikDanger)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingRevoke = null }) {
+                    Text("انصراف", color = TikMuted)
+                }
+            },
+        )
+    }
+}
+
+@Composable
+private fun SessionRow(
+    session: TikNetSession,
+    revoking: Boolean,
+    onRevoke: () -> Unit,
+) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(TikSurface2)
+            .border(1.dp, if (session.isCurrent) TikPrimary.copy(alpha = 0.4f) else TikBorder, RoundedCornerShape(14.dp))
+            .padding(14.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(
+                    if (session.isCurrent) "این دستگاه" else sessionUaLabel(session.userAgent),
+                    color = TikOnBg,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 14.sp,
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    listOfNotNull(
+                        session.ipAddress?.takeIf { it.isNotBlank() },
+                        session.createdAt?.let { TikNetJalali.formatExpire(it) },
+                    ).joinToString(" · ").ifBlank { "—" },
+                    color = TikMuted,
+                    fontSize = 12.sp,
+                )
+            }
+            if (session.isCurrent) {
+                Text("فعال", color = TikConnected, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+            } else {
+                TextButton(onClick = onRevoke, enabled = !revoking) {
+                    if (revoking) {
+                        CircularProgressIndicator(Modifier.size(16.dp), color = TikDanger, strokeWidth = 2.dp)
+                    } else {
+                        Text("خروج", color = TikDanger)
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun sessionUaLabel(ua: String?): String {
+    val raw = ua?.trim().orEmpty()
+    if (raw.isBlank()) return "دستگاه دیگر"
+    if (raw.contains("TikNet", ignoreCase = true)) return "اپ TikNet"
+    if (raw.contains("okhttp", ignoreCase = true)) return "اپ Android"
+    return raw.take(42)
+}
 
 @Composable
 private fun NotificationsSheet(

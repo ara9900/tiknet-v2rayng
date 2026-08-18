@@ -15,6 +15,7 @@ import com.v2ray.ang.core.LauncherManager
 import com.v2ray.ang.enums.PermissionType
 import com.v2ray.ang.handler.SettingsManager
 import com.v2ray.ang.tiknet.TikNetBootstrap
+import com.v2ray.ang.tiknet.TikNetNetworkReconnect
 import com.v2ray.ang.tiknet.TikNetPrefs
 import com.v2ray.ang.ui.base.HelperBaseComponentActivity
 import com.v2ray.ang.ui.compose.ThemeManager
@@ -25,6 +26,7 @@ class TikNetMainActivity : HelperBaseComponentActivity() {
     private val viewModel: TikNetMainViewModel by viewModels {
         TikNetMainViewModel.Companion.Factory(application as AngApplication)
     }
+    private var networkReconnect: TikNetNetworkReconnect? = null
 
     private val requestVpnPermission =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
@@ -45,6 +47,12 @@ class TikNetMainActivity : HelperBaseComponentActivity() {
         }
         TikNetBootstrap.applyDefaults(this)
         checkAndRequestPermission(PermissionType.POST_NOTIFICATIONS) {}
+        networkReconnect = TikNetNetworkReconnect(
+            this,
+            onUnderlayAvailable = { viewModel.onUnderlayNetworkAvailable() },
+            onUnderlayLost = { viewModel.onUnderlayNetworkLost() },
+        )
+        networkReconnect?.register()
         if (intent?.getBooleanExtra(com.v2ray.ang.tiknet.TikNetWidgetPin.EXTRA_WIDGET_PINNED, false) == true) {
             viewModel.showMessage(getString(com.v2ray.ang.R.string.tiknet_widget_pinned_ok))
             intent?.removeExtra(com.v2ray.ang.tiknet.TikNetWidgetPin.EXTRA_WIDGET_PINNED)
@@ -138,5 +146,11 @@ class TikNetMainActivity : HelperBaseComponentActivity() {
         } else {
             LauncherManager.startService(this)
         }
+    }
+
+    override fun onDestroy() {
+        networkReconnect?.unregister()
+        networkReconnect = null
+        super.onDestroy()
     }
 }

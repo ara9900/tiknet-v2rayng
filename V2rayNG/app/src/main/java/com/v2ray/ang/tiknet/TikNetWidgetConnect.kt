@@ -72,6 +72,7 @@ object TikNetWidgetConnect {
         if (com.v2ray.ang.core.CoreServiceManager.isRunning()) {
             clearSmartPending(app)
             TikNetPrefs.setWidgetConnecting(app, false)
+            TikNetPrefs.setWantConnected(app, false)
             WidgetProvider.refreshAll(app)
             CompactWidgetProvider.refreshAll(app)
             LauncherManager.stopService(app)
@@ -92,11 +93,13 @@ object TikNetWidgetConnect {
         val guid = resolveServerGuid(ctx)
         if (!guid.isNullOrBlank()) MmkvManager.setSelectServer(guid)
         TikNetPrefs.setWidgetConnecting(ctx, true)
+        TikNetPrefs.setWantConnected(ctx, true)
         WidgetProvider.refreshAll(ctx)
         CompactWidgetProvider.refreshAll(ctx)
         val started = LauncherManager.startServiceFromToggle(ctx)
         if (!started) {
             TikNetPrefs.setWidgetConnecting(ctx, false)
+            TikNetPrefs.setWantConnected(ctx, false)
             WidgetProvider.refreshAll(ctx)
             CompactWidgetProvider.refreshAll(ctx)
         }

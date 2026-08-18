@@ -33,6 +33,27 @@ data class TikNetUserInfo(
     @SerializedName("support_telegram") val supportTelegram: String? = null,
 )
 
+data class TikNetUsagePoint(
+    val t: String? = null,
+    @SerializedName("used_gb") val usedGb: Double = 0.0,
+    @SerializedName("limit_gb") val limitGb: Double = 0.0,
+)
+
+data class TikNetUsageHistory(
+    @SerializedName("order_id") val orderId: Int = 0,
+    @SerializedName("used_gb") val usedGb: Double = 0.0,
+    @SerializedName("limit_gb") val limitGb: Double = 0.0,
+    val points: List<TikNetUsagePoint> = emptyList(),
+)
+
+data class TikNetSession(
+    val id: Int = 0,
+    @SerializedName("ip_address") val ipAddress: String? = null,
+    @SerializedName("user_agent") val userAgent: String? = null,
+    @SerializedName("created_at") val createdAt: String? = null,
+    @SerializedName("is_current") val isCurrent: Boolean = false,
+)
+
 data class TikNetPublicConfig(
     val shopEnabled: Boolean = false,
     val shopUrl: String? = null,
@@ -101,6 +122,12 @@ object TikNetApi {
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
         .writeTimeout(15, TimeUnit.SECONDS)
+        .addInterceptor { chain ->
+            val req = chain.request().newBuilder()
+                .header("User-Agent", "TikNet/${com.v2ray.ang.BuildConfig.VERSION_NAME} Android")
+                .build()
+            chain.proceed(req)
+        }
         .build()
 
     private fun root(baseUrl: String): String = baseUrl.trim().trimEnd('/')
@@ -574,6 +601,81 @@ object TikNetApi {
                 throw TikNetApiException(detail ?: "referral attach HTTP ${resp.code}", resp.code)
             }
             return TikNetReferralParser.parseAttach(text, code)
+        }
+    }
+
+    fun getUsageHistory(baseUrl: String, token: String, days: Int = 14): TikNetUsageHistory {
+        val req = Request.Builder()
+            .url("${root(baseUrl)}/api/customer/usage-history?days=$days")
+            .get()
+            .header("Authorization", "Bearer $token")
+            .header("Accept", "application/json")
+            .build()
+        client.newCall(req).execute().use { resp ->
+            val text = resp.body?.string().orEmpty()
+            if (!resp.isSuccessful) {
+                val detail = runCatching {
+                    JsonParser.parseString(text).asJsonObject.get("detail")?.asString
+                }.getOrNull()
+                throw TikNetApiException(detail ?: "usage HTTP ${resp.code}", resp.code)
+            }
+            val rootEl = JsonParser.parseString(text).asJsonObject
+            val points = rootEl.getAsJsonArray("points")?.mapNotNull { el ->
+                if (!el.isJsonObject) return@mapNotNull null
+                val o = el.asJsonObject
+                TikNetUsagePoint(
+                    t = o.get("t")?.takeIf { !it.isJsonNull }?.asString,
+                    usedGb = o.get("used_gb")?.takeIf { it.isJsonPrimitive }?.asDouble ?: 0.0,
+                    limitGb = o.get("limit_gb")?.takeIf { it.isJsonPrimitive }?.asDouble ?: 0.0,
+                )
+            } ?: emptyList()
+            return TikNetUsageHistory(
+                orderId = rootEl.get("order_id")?.takeIf { it.isJsonPrimitive }?.asInt ?: 0,
+                usedGb = rootEl.get("used_gb")?.takeIf { it.isJsonPrimitive }?.asDouble ?: 0.0,
+                limitGb = rootEl.get("limit_gb")?.takeIf { it.isJsonPrimitive }?.asDouble ?: 0.0,
+                points = points,
+            )
+        }
+    }
+
+    fun listSessions(baseUrl: String, token: String): List<TikNetSession> {
+        val req = Request.Builder()
+            .url("${root(baseUrl)}/api/customer/sessions")
+            .get()
+            .header("Authorization", "Bearer $token")
+            .header("Accept", "application/json")
+            .build()
+        client.newCall(req).execute().use { resp ->
+            val text = resp.body?.string().orEmpty()
+            if (!resp.isSuccessful) {
+                val detail = runCatching {
+                    JsonParser.parseString(text).asJsonObject.get("detail")?.asString
+                }.getOrNull()
+                throw TikNetApiException(detail ?: "sessions HTTP ${resp.code}", resp.code)
+            }
+            val arr = JsonParser.parseString(text).asJsonObject.getAsJsonArray("sessions")
+                ?: return emptyList()
+            return arr.mapNotNull {
+                runCatching { gson.fromJson(it, TikNetSession::class.java) }.getOrNull()
+            }
+        }
+    }
+
+    fun revokeSession(baseUrl: String, token: String, sessionId: Int) {
+        val req = Request.Builder()
+            .url("${root(baseUrl)}/api/customer/sessions/$sessionId")
+            .delete()
+            .header("Authorization", "Bearer $token")
+            .header("Accept", "application/json")
+            .build()
+        client.newCall(req).execute().use { resp ->
+            if (!resp.isSuccessful) {
+                val text = resp.body?.string().orEmpty()
+                val detail = runCatching {
+                    JsonParser.parseString(text).asJsonObject.get("detail")?.asString
+                }.getOrNull()
+                throw TikNetApiException(detail ?: "revoke HTTP ${resp.code}", resp.code)
+            }
         }
     }
 

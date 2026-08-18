@@ -37,6 +37,11 @@ object TikNetJalali {
         return String.format(Locale.US, "%04d/%02d/%02d", jy, jm, jd)
     }
 
+    fun formatGb(value: Double): String {
+        if (value < 0.01) return String.format(Locale.US, "%.0f MB", value * 1024.0)
+        return String.format(Locale.US, "%.2f GB", value)
+    }
+
     fun formatTraffic(used: Long?, limit: Long?): String {
         fun one(b: Long): String {
             val gb = 1024.0 * 1024.0 * 1024.0
