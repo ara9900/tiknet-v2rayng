@@ -190,9 +190,9 @@ private val TikDanger = Color(0xFFEF4444)
 private val TikWarn = Color(0xFFEAB308)
 private val TikOrange = Color(0xFFF97316)
 
-private enum class TikNetTab { Connect, Details, Filter, Account }
+private enum class TikNetTab { Connect, Details, Filter, Account, Settings }
 
-private enum class AccountSheet { None, Notifications, Faq, Diagnostics, Settings, Sessions }
+private enum class AccountSheet { None, Notifications, Faq, Diagnostics, Sessions }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -277,7 +277,6 @@ fun TikNetShell(
                                 accountSheet = AccountSheet.Faq
                                 viewModel.loadFaq()
                             },
-                            onOpenSettings = { accountSheet = AccountSheet.Settings },
                             onOpenSessions = {
                                 accountSheet = AccountSheet.Sessions
                                 viewModel.loadSessions()
@@ -287,6 +286,20 @@ fun TikNetShell(
                             onSupportCopied = { viewModel.showMessage("اطلاعات پشتیبانی کپی شد") },
                         )
                     }
+                    TikNetTab.Settings -> SettingsTab(
+                        state = state,
+                        onIranDirectChange = { viewModel.setIranDirectEnabled(it) },
+                        onReconnectChange = { viewModel.setReconnectOnNetworkEnabled(it) },
+                        onWidgetModeChange = { viewModel.setWidgetMode(it) },
+                        onWidgetServerChange = { viewModel.setWidgetServerGuid(it) },
+                        onPinWidget = { viewModel.pinHomeWidget(com.v2ray.ang.tiknet.TikNetWidgetPin.Kind.Full) },
+                        onPinCompactWidget = { viewModel.pinHomeWidget(com.v2ray.ang.tiknet.TikNetWidgetPin.Kind.Compact) },
+                        onOpenDiagnostics = {
+                            accountSheet = AccountSheet.Diagnostics
+                            viewModel.runDiagnostics()
+                        },
+                        onSupportCopied = { viewModel.showMessage("اطلاعات پشتیبانی کپی شد") },
+                    )
                 }
             }
 
@@ -378,31 +391,6 @@ fun TikNetShell(
                         onAutoFixAll = { viewModel.autoFixDiagnostics() },
                         onAutoFixItem = { viewModel.autoFixDiagItem(it) },
                         onOpenSettings = { viewModel.openSettingsTarget(it) },
-                        onClose = { accountSheet = AccountSheet.None },
-                    )
-                }
-            }
-            AccountSheet.Settings -> {
-                val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-                ModalBottomSheet(
-                    onDismissRequest = { accountSheet = AccountSheet.None },
-                    sheetState = sheetState,
-                    containerColor = TikBg,
-                    contentColor = TikOnBg,
-                ) {
-                    SettingsSheet(
-                        state = state,
-                        onIranDirectChange = { viewModel.setIranDirectEnabled(it) },
-                        onReconnectChange = { viewModel.setReconnectOnNetworkEnabled(it) },
-                        onWidgetModeChange = { viewModel.setWidgetMode(it) },
-                        onWidgetServerChange = { viewModel.setWidgetServerGuid(it) },
-                        onPinWidget = { viewModel.pinHomeWidget(com.v2ray.ang.tiknet.TikNetWidgetPin.Kind.Full) },
-                        onPinCompactWidget = { viewModel.pinHomeWidget(com.v2ray.ang.tiknet.TikNetWidgetPin.Kind.Compact) },
-                        onOpenDiagnostics = {
-                            accountSheet = AccountSheet.Diagnostics
-                            viewModel.runDiagnostics()
-                        },
-                        onSupportCopied = { viewModel.showMessage("اطلاعات پشتیبانی کپی شد") },
                         onClose = { accountSheet = AccountSheet.None },
                     )
                 }
@@ -553,16 +541,21 @@ private fun TikNetBottomNav(tab: TikNetTab, onSelect: (TikNetTab) -> Unit) {
     val items = listOf(
         Triple(TikNetTab.Connect, Icons.Outlined.Shield, "اتصال"),
         Triple(TikNetTab.Details, Icons.Outlined.Analytics, "جزئیات"),
-        Triple(TikNetTab.Filter, Icons.Outlined.Apps, "فیلتر اپ‌ها"),
-        Triple(TikNetTab.Account, Icons.Outlined.Person, "حساب من"),
+        Triple(TikNetTab.Filter, Icons.Outlined.Apps, "فیلتر"),
+        Triple(TikNetTab.Account, Icons.Outlined.Person, "حساب"),
+        Triple(TikNetTab.Settings, Icons.Outlined.Settings, "تنظیمات"),
     )
     Row(
         Modifier
             .fillMaxWidth()
-            .background(TikSurface)
+            .background(
+                Brush.verticalGradient(
+                    listOf(TikSurface.copy(alpha = 0.98f), TikBg),
+                ),
+            )
             .border(width = 1.dp, color = TikBorder)
             .navigationBarsPadding()
-            .padding(horizontal = 8.dp, vertical = 8.dp),
+            .padding(horizontal = 4.dp, vertical = 6.dp),
         horizontalArrangement = Arrangement.SpaceEvenly,
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -571,31 +564,34 @@ private fun TikNetBottomNav(tab: TikNetTab, onSelect: (TikNetTab) -> Unit) {
             Column(
                 modifier = Modifier
                     .weight(1f)
-                    .clip(RoundedCornerShape(16.dp))
+                    .clip(RoundedCornerShape(14.dp))
                     .clickable { onSelect(t) }
-                    .background(if (selected) TikPrimary.copy(alpha = 0.18f) else Color.Transparent)
-                    .padding(vertical = 8.dp, horizontal = 4.dp),
+                    .background(
+                        if (selected) Brush.linearGradient(listOf(TikPrimary.copy(alpha = 0.22f), TikPrimary.copy(alpha = 0.08f)))
+                        else Brush.linearGradient(listOf(Color.Transparent, Color.Transparent)),
+                    )
+                    .padding(vertical = 6.dp, horizontal = 2.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Box(
                     modifier = Modifier
-                        .clip(RoundedCornerShape(20.dp))
-                        .background(if (selected) TikPrimary.copy(alpha = 0.28f) else Color.Transparent)
-                        .padding(horizontal = 14.dp, vertical = 4.dp),
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(if (selected) TikPrimary.copy(alpha = 0.32f) else Color.Transparent)
+                        .padding(horizontal = 10.dp, vertical = 4.dp),
                     contentAlignment = Alignment.Center,
                 ) {
                     Icon(
                         icon,
                         contentDescription = label,
-                        tint = if (selected) TikPrimary else TikMuted,
-                        modifier = Modifier.size(22.dp),
+                        tint = if (selected) Color.White else TikMuted,
+                        modifier = Modifier.size(if (selected) 21.dp else 20.dp),
                     )
                 }
-                Spacer(Modifier.height(4.dp))
+                Spacer(Modifier.height(3.dp))
                 Text(
                     label,
-                    color = if (selected) TikOnBg else TikMuted,
-                    fontSize = 11.sp,
+                    color = if (selected) TikOnBg else TikMuted.copy(alpha = 0.85f),
+                    fontSize = 10.sp,
                     fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -1948,7 +1944,6 @@ private fun AccountTab(
     onLogoutClick: () -> Unit,
     onOpenNotifications: () -> Unit,
     onOpenFaq: () -> Unit,
-    onOpenSettings: () -> Unit,
     onOpenSessions: () -> Unit,
     onReloadReferral: () -> Unit,
     onAttachReferral: (String) -> Unit,
@@ -1994,7 +1989,7 @@ private fun AccountTab(
     ) {
         Text("حساب من", color = TikOnBg, fontSize = 22.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(4.dp))
-        Text("پروفایل، اشتراک و خدمات حساب", color = TikMuted, fontSize = 13.sp)
+        Text("پروفایل، اشتراک و خدمات", color = TikMuted, fontSize = 13.sp)
 
         Spacer(Modifier.height(16.dp))
         Row(
@@ -2203,7 +2198,7 @@ private fun AccountTab(
         }
 
         Spacer(Modifier.height(22.dp))
-        AccountSectionLabel("خدمات", "اعلان‌ها، دستگاه‌ها و تنظیمات")
+        AccountSectionLabel("خدمات", "اعلان‌ها و پشتیبانی")
         Column(
             Modifier
                 .fillMaxWidth()
@@ -2221,8 +2216,6 @@ private fun AccountTab(
             ServiceTile(Icons.Outlined.Devices, "دستگاه‌های واردشده", onClick = onOpenSessions)
             HorizontalDivider(color = TikBorder, modifier = Modifier.padding(start = 60.dp))
             ServiceTile(Icons.Outlined.HelpOutline, "راهنما و سوالات", onClick = onOpenFaq)
-            HorizontalDivider(color = TikBorder, modifier = Modifier.padding(start = 60.dp))
-            ServiceTile(Icons.Outlined.Settings, "تنظیمات", onClick = onOpenSettings)
         }
 
         Spacer(Modifier.height(18.dp))
@@ -2873,39 +2866,78 @@ private fun UsageHistoryCard(history: TikNetUsageHistory?) {
     } else {
         null
     }
+    val startDate = points.firstOrNull()?.t?.let { TikNetJalali.formatChartAxisDate(it) }
+    val endDate = points.lastOrNull()?.t?.let { TikNetJalali.formatChartAxisDate(it) }
+
     Column(
         Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
-            .background(TikSurface2)
-            .border(1.dp, TikBorder, RoundedCornerShape(14.dp))
+            .clip(RoundedCornerShape(16.dp))
+            .background(
+                Brush.linearGradient(
+                    listOf(TikSurface2, TikSurface2.copy(alpha = 0.85f)),
+                ),
+            )
+            .border(1.dp, TikPrimary.copy(alpha = 0.18f), RoundedCornerShape(16.dp))
             .padding(14.dp),
     ) {
-        Text("مصرف ۱۴ روز", color = TikMuted, fontSize = 12.sp)
-        Spacer(Modifier.height(4.dp))
-        Text(
-            buildString {
-                append(TikNetJalali.formatGb(used))
-                if (limit > 0) {
-                    append(" / ")
-                    append(TikNetJalali.formatGb(limit))
-                }
-            },
-            color = TikOnBg,
-            fontWeight = FontWeight.SemiBold,
-            fontSize = 15.sp,
-        )
-        if (periodDelta != null) {
-            Spacer(Modifier.height(2.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                Modifier
+                    .size(34.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(TikPrimary.copy(alpha = 0.16f)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(Icons.Outlined.Analytics, contentDescription = null, tint = TikPrimary, modifier = Modifier.size(18.dp))
+            }
+            Spacer(Modifier.width(10.dp))
+            Column(Modifier.weight(1f)) {
+                Text("نمودار مصرف ۱۴ روز", color = TikOnBg, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                Text("مصرف تجمعی بر اساس تاریخ", color = TikMuted, fontSize = 11.sp)
+            }
+        }
+
+        Spacer(Modifier.height(12.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            UsageStatChip(
+                Modifier.weight(1f),
+                "کل مصرف",
+                buildString {
+                    append(TikNetJalali.formatGb(used))
+                    if (limit > 0) append(" / ${TikNetJalali.formatGb(limit)}")
+                },
+            )
+            if (periodDelta != null) {
+                UsageStatChip(
+                    Modifier.weight(1f),
+                    "رشد بازه",
+                    TikNetJalali.formatGb(periodDelta),
+                )
+            }
+        }
+
+        if (startDate != null && endDate != null) {
+            Spacer(Modifier.height(8.dp))
             Text(
-                "در این بازه: ${TikNetJalali.formatGb(periodDelta)}",
+                "از $startDate تا $endDate",
                 color = TikMuted,
-                fontSize = 12.sp,
+                fontSize = 11.sp,
             )
         }
+
         Spacer(Modifier.height(12.dp))
         if (points.size < 2) {
-            Text("هنوز تاریخچه‌ای ثبت نشده", color = TikMuted, fontSize = 12.sp)
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(120.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(TikBg.copy(alpha = 0.35f)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text("هنوز تاریخچه‌ای ثبت نشده", color = TikMuted, fontSize = 12.sp)
+            }
         } else {
             UsageSparkline(points = points, limitGb = limit)
         }
@@ -2913,48 +2945,181 @@ private fun UsageHistoryCard(history: TikNetUsageHistory?) {
 }
 
 @Composable
+private fun UsageStatChip(modifier: Modifier, label: String, value: String) {
+    Column(
+        modifier
+            .clip(RoundedCornerShape(12.dp))
+            .background(TikBg.copy(alpha = 0.45f))
+            .border(1.dp, TikBorder, RoundedCornerShape(12.dp))
+            .padding(horizontal = 10.dp, vertical = 8.dp),
+    ) {
+        Text(label, color = TikMuted, fontSize = 10.sp)
+        Spacer(Modifier.height(2.dp))
+        Text(
+            TikNetJalali.toPersianDigits(value),
+            color = TikOnBg,
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 13.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+@Composable
 private fun UsageSparkline(points: List<TikNetUsagePoint>, limitGb: Double) {
     val vals = points.map { it.usedGb.toFloat() }
-    val maxY = (vals.maxOrNull() ?: 0.01f)
-        .coerceAtLeast(if (limitGb > 0) limitGb.toFloat() else 0.01f)
-        .times(1.08f)
-        .coerceAtLeast(0.05f)
-    Canvas(
+    val rawMax = (vals.maxOrNull() ?: 0.01f).coerceAtLeast(if (limitGb > 0) limitGb.toFloat() else 0.01f)
+    val maxY = (rawMax * 1.12f).coerceAtLeast(0.05f)
+    val midY = maxY / 2f
+    val yTicks = listOf(maxY, midY, 0f)
+    val yLabels = yTicks.map { TikNetJalali.formatGb(it.toDouble()) }
+    val xIndices = when {
+        points.size <= 1 -> listOf(0)
+        points.size == 2 -> listOf(0, 1)
+        else -> listOf(0, points.size / 2, points.lastIndex)
+    }
+
+    Column(
         Modifier
             .fillMaxWidth()
-            .height(92.dp),
+            .clip(RoundedCornerShape(12.dp))
+            .background(TikBg.copy(alpha = 0.35f))
+            .border(1.dp, TikBorder, RoundedCornerShape(12.dp))
+            .padding(10.dp),
     ) {
-        val n = vals.size
-        fun xAt(i: Int) = if (n <= 1) size.width / 2f else size.width * i / (n - 1).toFloat()
-        fun yAt(v: Float) = size.height - (size.height * (v / maxY).coerceIn(0f, 1f))
-        val line = Path()
-        val fill = Path()
-        vals.forEachIndexed { i, v ->
-            val x = xAt(i)
-            val y = yAt(v)
-            if (i == 0) {
-                line.moveTo(x, y)
-                fill.moveTo(x, size.height)
-                fill.lineTo(x, y)
-            } else {
-                line.lineTo(x, y)
-                fill.lineTo(x, y)
+        Row(Modifier.fillMaxWidth()) {
+            Column(
+                Modifier
+                    .width(46.dp)
+                    .height(132.dp),
+                verticalArrangement = Arrangement.SpaceBetween,
+            ) {
+                yLabels.forEach { label ->
+                    Text(
+                        TikNetJalali.toPersianDigits(label),
+                        color = TikMuted,
+                        fontSize = 9.sp,
+                        maxLines = 1,
+                    )
+                }
+            }
+            Box(
+                Modifier
+                    .weight(1f)
+                    .height(132.dp),
+            ) {
+                Canvas(Modifier.fillMaxSize()) {
+                    val padV = 6.dp.toPx()
+                    val plotH = size.height - padV * 2
+                    fun yAt(v: Float) = padV + plotH - (plotH * (v / maxY).coerceIn(0f, 1f))
+                    fun xAt(i: Int) = if (vals.size <= 1) size.width / 2f else size.width * i / (vals.size - 1).toFloat()
+
+                    yTicks.forEach { tick ->
+                        val y = yAt(tick)
+                        drawLine(
+                            color = TikBorder.copy(alpha = 0.9f),
+                            start = Offset(0f, y),
+                            end = Offset(size.width, y),
+                            strokeWidth = 1.dp.toPx(),
+                        )
+                    }
+
+                    if (limitGb > 0) {
+                        val ly = yAt(limitGb.toFloat().coerceAtMost(maxY))
+                        drawLine(
+                            color = TikOrange.copy(alpha = 0.75f),
+                            start = Offset(0f, ly),
+                            end = Offset(size.width, ly),
+                            strokeWidth = 1.5.dp.toPx(),
+                            pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 8f)),
+                        )
+                    }
+
+                    val line = Path()
+                    val fill = Path()
+                    vals.forEachIndexed { i, v ->
+                        val x = xAt(i)
+                        val y = yAt(v)
+                        if (i == 0) {
+                            line.moveTo(x, y)
+                            fill.moveTo(x, size.height - padV)
+                            fill.lineTo(x, y)
+                        } else {
+                            line.lineTo(x, y)
+                            fill.lineTo(x, y)
+                        }
+                    }
+                    fill.lineTo(xAt(vals.lastIndex), size.height - padV)
+                    fill.close()
+                    drawPath(fill, Brush.verticalGradient(listOf(TikPrimary.copy(alpha = 0.35f), TikPrimary.copy(alpha = 0.04f))))
+                    drawPath(line, TikPrimary, style = Stroke(width = 2.5.dp.toPx(), cap = StrokeCap.Round))
+
+                    vals.forEachIndexed { i, v ->
+                        if (i == vals.lastIndex || i == 0 || i == vals.size / 2) {
+                            drawCircle(
+                                color = TikPrimary,
+                                radius = 3.5.dp.toPx(),
+                                center = Offset(xAt(i), yAt(v)),
+                            )
+                            drawCircle(
+                                color = Color.White,
+                                radius = 1.6.dp.toPx(),
+                                center = Offset(xAt(i), yAt(v)),
+                            )
+                        }
+                    }
+                }
             }
         }
-        fill.lineTo(xAt(n - 1), size.height)
-        fill.close()
-        drawPath(fill, TikPrimary.copy(alpha = 0.22f))
-        drawPath(line, TikPrimary, style = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round))
-        if (limitGb > 0) {
-            val ly = yAt(limitGb.toFloat())
-            drawLine(
-                color = TikMuted.copy(alpha = 0.55f),
-                start = Offset(0f, ly),
-                end = Offset(size.width, ly),
-                strokeWidth = 1.5.dp.toPx(),
-                pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 8f)),
+        Spacer(Modifier.height(6.dp))
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(start = 46.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            xIndices.forEach { i ->
+                Text(
+                    TikNetJalali.toPersianDigits(TikNetJalali.formatChartAxisDate(points[i].t)),
+                    color = TikMuted,
+                    fontSize = 9.sp,
+                )
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            UsageLegendItem(color = TikPrimary, label = "مصرف تجمعی", dashed = false)
+            if (limitGb > 0) {
+                UsageLegendItem(color = TikOrange, label = "سقف پلن", dashed = true)
+            }
+        }
+    }
+}
+
+@Composable
+private fun UsageLegendItem(color: Color, label: String, dashed: Boolean) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        if (dashed) {
+            Canvas(Modifier.width(18.dp).height(8.dp)) {
+                drawLine(
+                    color = color,
+                    start = Offset(0f, size.height / 2),
+                    end = Offset(size.width, size.height / 2),
+                    strokeWidth = 2.dp.toPx(),
+                    pathEffect = PathEffect.dashPathEffect(floatArrayOf(6f, 4f)),
+                )
+            }
+        } else {
+            Box(
+                Modifier
+                    .size(8.dp)
+                    .clip(CircleShape)
+                    .background(color),
             )
         }
+        Spacer(Modifier.width(6.dp))
+        Text(label, color = TikMuted, fontSize = 10.sp)
     }
 }
 
@@ -3007,10 +3172,10 @@ private fun ServiceTile(
     }
 }
 
-/* ───────────────────────── Account sheets ───────────────────────── */
+/* ───────────────────────── Settings tab ───────────────────────── */
 
 @Composable
-private fun SettingsSheet(
+private fun SettingsTab(
     state: TikNetMainUiState,
     onIranDirectChange: (Boolean) -> Unit,
     onReconnectChange: (Boolean) -> Unit,
@@ -3020,7 +3185,6 @@ private fun SettingsSheet(
     onPinCompactWidget: () -> Unit,
     onOpenDiagnostics: () -> Unit,
     onSupportCopied: () -> Unit,
-    onClose: () -> Unit,
 ) {
     val clipboard = LocalClipboardManager.current
     val context = LocalContext.current
@@ -3039,13 +3203,17 @@ private fun SettingsSheet(
     }
     Column(
         Modifier
-            .fillMaxWidth()
-            .fillMaxHeight(0.92f)
+            .fillMaxSize()
+            .statusBarsPadding()
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp)
-            .padding(bottom = 24.dp),
+            .padding(horizontal = 20.dp, vertical = 12.dp)
+            .padding(bottom = 20.dp),
     ) {
-        SheetHeader("تنظیمات", onClose)
+        Text("تنظیمات", color = TikOnBg, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(4.dp))
+        Text("اتصال، ویجت و عیب‌یابی دستگاه", color = TikMuted, fontSize = 13.sp)
+
+        Spacer(Modifier.height(18.dp))
         AccountSectionLabel("اتصال", "مسیریابی و وصل مجدد")
         ConnectionSettingsCard(
             state = state,
@@ -3056,13 +3224,14 @@ private fun SettingsSheet(
             onPinWidget = onPinWidget,
             onPinCompactWidget = onPinCompactWidget,
         )
-        Spacer(Modifier.height(18.dp))
-        AccountSectionLabel("پشتیبانی دستگاه", "عیب‌یابی و اطلاعات")
+
+        Spacer(Modifier.height(22.dp))
+        AccountSectionLabel("پشتیبانی", "عیب‌یابی و اطلاعات دستگاه")
         Column(
             Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(20.dp))
-                .background(TikSurface2)
+                .background(TikSurface)
                 .border(1.dp, TikBorder, RoundedCornerShape(20.dp)),
         ) {
             ServiceTile(Icons.Outlined.Troubleshoot, "عیب‌یابی اینترنت گوشی", onClick = onOpenDiagnostics)
@@ -3072,8 +3241,19 @@ private fun SettingsSheet(
                 onSupportCopied()
             })
         }
+
+        Spacer(Modifier.height(14.dp))
+        Text(
+            "TikNet  ·  نسخه ${TikNetJalali.toPersianDigits(state.appVersion)}",
+            color = TikMuted.copy(alpha = 0.85f),
+            fontSize = 12.sp,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth(),
+        )
     }
 }
+
+/* ───────────────────────── Account sheets ───────────────────────── */
 
 @Composable
 private fun SessionsSheet(

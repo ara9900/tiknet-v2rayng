@@ -42,6 +42,14 @@ object TikNetJalali {
         return String.format(Locale.US, "%.2f GB", value)
     }
 
+    /** Short Jalali label for chart X-axis, e.g. 05/28 */
+    fun formatChartAxisDate(raw: String?): String {
+        if (raw.isNullOrBlank()) return "—"
+        val full = formatExpire(raw)
+        val parts = full.split('/')
+        return if (parts.size == 3) "${parts[1]}/${parts[2]}" else full.take(8)
+    }
+
     fun formatTraffic(used: Long?, limit: Long?): String {
         fun one(b: Long): String {
             val gb = 1024.0 * 1024.0 * 1024.0
