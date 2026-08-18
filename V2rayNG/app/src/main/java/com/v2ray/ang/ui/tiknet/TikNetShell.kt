@@ -2152,40 +2152,6 @@ private fun AccountTab(
         }
 
         val tg = state.telegramSupport
-        if (!tg.isNullOrBlank()) {
-            Spacer(Modifier.height(12.dp))
-            OutlinedButton(
-                onClick = {
-                    clipboard.setText(AnnotatedString(supportTicketText()))
-                    onSupportCopied()
-                    val url = when {
-                        tg.startsWith("http") -> tg
-                        tg.startsWith("tg:") -> tg
-                        tg.startsWith("@") -> "https://t.me/${tg.removePrefix("@")}"
-                        else -> "https://t.me/$tg"
-                    }
-                    runCatching { uriHandler.openUri(url) }
-                },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(50.dp),
-                shape = RoundedCornerShape(16.dp),
-                border = BorderStroke(1.dp, TikPrimary.copy(alpha = 0.45f)),
-                colors = ButtonDefaults.outlinedButtonColors(contentColor = TikOnBg),
-            ) {
-                Box(
-                    Modifier
-                        .size(28.dp)
-                        .clip(CircleShape)
-                        .background(TikPrimary.copy(alpha = 0.16f)),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(Icons.Outlined.Chat, contentDescription = null, tint = TikPrimary, modifier = Modifier.size(16.dp))
-                }
-                Spacer(Modifier.width(10.dp))
-                Text("پشتیبانی (با کپی مشخصات)", fontWeight = FontWeight.SemiBold)
-            }
-        }
 
         if (!state.referralDisabled) {
             Spacer(Modifier.height(22.dp))
@@ -2216,6 +2182,24 @@ private fun AccountTab(
             ServiceTile(Icons.Outlined.Devices, "دستگاه‌های واردشده", onClick = onOpenSessions)
             HorizontalDivider(color = TikBorder, modifier = Modifier.padding(start = 60.dp))
             ServiceTile(Icons.Outlined.HelpOutline, "راهنما و سوالات", onClick = onOpenFaq)
+            if (!tg.isNullOrBlank()) {
+                HorizontalDivider(color = TikBorder, modifier = Modifier.padding(start = 60.dp))
+                ServiceTile(
+                    icon = Icons.Outlined.Chat,
+                    label = "پشتیبانی (با کپی مشخصات)",
+                    onClick = {
+                        clipboard.setText(AnnotatedString(supportTicketText()))
+                        onSupportCopied()
+                        val url = when {
+                            tg.startsWith("http") -> tg
+                            tg.startsWith("tg:") -> tg
+                            tg.startsWith("@") -> "https://t.me/${tg.removePrefix("@")}"
+                            else -> "https://t.me/$tg"
+                        }
+                        runCatching { uriHandler.openUri(url) }
+                    },
+                )
+            }
         }
 
         Spacer(Modifier.height(18.dp))
@@ -2246,7 +2230,11 @@ private fun AccountTab(
 
 @Composable
 private fun AccountSectionLabel(title: String, hint: String? = null) {
-    Column(Modifier.padding(bottom = 10.dp)) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(bottom = 12.dp),
+    ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(
                 Modifier
@@ -2259,8 +2247,92 @@ private fun AccountSectionLabel(title: String, hint: String? = null) {
             Text(title, color = TikOnBg, fontWeight = FontWeight.Bold, fontSize = 15.sp)
         }
         if (!hint.isNullOrBlank()) {
-            Spacer(Modifier.height(4.dp))
-            Text(hint, color = TikMuted, fontSize = 12.sp, modifier = Modifier.padding(start = 11.dp))
+            Spacer(Modifier.height(5.dp))
+            Box(
+                modifier = Modifier
+                    .padding(start = 11.dp)
+                    .clip(RoundedCornerShape(999.dp))
+                    .background(TikSurface2.copy(alpha = 0.55f))
+                    .border(1.dp, TikBorder.copy(alpha = 0.55f), RoundedCornerShape(999.dp))
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
+            ) {
+                Text(hint, color = TikMuted, fontSize = 12.sp, lineHeight = 14.sp)
+            }
+        }
+    }
+}
+
+@Composable
+private fun SettingsProfileCard(state: TikNetMainUiState) {
+    val user = state.user
+    val expired = user?.isExpired == true
+    val hasSub = user?.hasSubscription == true
+    val active = user != null && hasSub && user.isExpired != true
+    val displayName = user?.fullName?.takeIf { it.isNotBlank() } ?: user?.username ?: "—"
+
+    val accent = when {
+        state.userLoading && user == null -> TikMuted
+        expired && hasSub -> TikDanger
+        !hasSub && user != null -> TikWarn
+        active -> TikConnected
+        else -> TikPrimary
+    }
+
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(20.dp))
+            .background(TikSurface)
+            .border(1.dp, accent.copy(alpha = 0.28f), RoundedCornerShape(20.dp))
+            .padding(16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            Modifier
+                .size(60.dp)
+                .clip(CircleShape)
+                .background(Brush.linearGradient(listOf(accent, accent.copy(alpha = 0.55f))))
+                .border(2.dp, Color.White.copy(alpha = 0.18f), CircleShape),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                displayName.take(1).uppercase(),
+                color = Color.White,
+                fontSize = 24.sp,
+                fontWeight = FontWeight.Bold,
+            )
+        }
+
+        Spacer(Modifier.width(14.dp))
+
+        Column(Modifier.weight(1f)) {
+            Text(
+                displayName,
+                color = TikOnBg,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (!user?.username.isNullOrBlank()) {
+                Spacer(Modifier.height(2.dp))
+                Text("@${user!!.username}", color = TikMuted, fontSize = 12.sp, maxLines = 1)
+            }
+
+            Spacer(Modifier.height(8.dp))
+
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                StatusBadge(
+                    expired = expired,
+                    active = active,
+                    hasSub = hasSub,
+                    loading = state.userLoading && user == null,
+                )
+                if (state.profileOffline) OfflineBadge()
+            }
         }
     }
 }
@@ -3212,6 +3284,9 @@ private fun SettingsTab(
         Text("تنظیمات", color = TikOnBg, fontSize = 22.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(4.dp))
         Text("اتصال، ویجت و عیب‌یابی دستگاه", color = TikMuted, fontSize = 13.sp)
+
+        Spacer(Modifier.height(14.dp))
+        SettingsProfileCard(state)
 
         Spacer(Modifier.height(18.dp))
         AccountSectionLabel("اتصال", "مسیریابی و وصل مجدد")
