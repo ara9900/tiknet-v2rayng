@@ -2175,9 +2175,9 @@ private fun AccountTab(
                 badge = state.unreadCount,
             )
             HorizontalDivider(color = TikBorder, modifier = Modifier.padding(start = 60.dp))
-            ServiceTile(Icons.Outlined.HelpOutline, "راهنما و سوالات", onOpenFaq)
+            ServiceTile(Icons.Outlined.HelpOutline, "راهنما و سوالات", onClick = onOpenFaq)
             HorizontalDivider(color = TikBorder, modifier = Modifier.padding(start = 60.dp))
-            ServiceTile(Icons.Outlined.Troubleshoot, "عیب‌یابی اینترنت گوشی", onOpenDiagnostics)
+            ServiceTile(Icons.Outlined.Troubleshoot, "عیب‌یابی اینترنت گوشی", onClick = onOpenDiagnostics)
             HorizontalDivider(color = TikBorder, modifier = Modifier.padding(start = 60.dp))
             ServiceTile(Icons.Outlined.ContentCopy, "کپی اطلاعات پشتیبانی", onClick = {
                 clipboard.setText(AnnotatedString(supportTicketText()))
