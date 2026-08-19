@@ -128,6 +128,7 @@ data class TikNetMainUiState(
     val widgetServerGuid: String? = null,
     val reconnectOnNetwork: Boolean = true,
     val usageHistory: TikNetUsageHistory? = null,
+    val usageDays: Int = 14,
     val usageLoading: Boolean = false,
     val usageMissing: Boolean = false,
     val sessions: List<TikNetSession> = emptyList(),
@@ -1264,16 +1265,17 @@ class TikNetMainViewModel(
         TikNetDiagnostics.openSettings(getApplication(), action)
     }
 
-    fun loadUsageHistory() {
+    fun loadUsageHistory(days: Int = _ui.value.usageDays) {
         viewModelScope.launch {
             val ctx = getApplication<Application>()
             val base = TikNetPrefs.getBaseUrl(ctx)
             val token = TikNetPrefs.getAccessToken(ctx)
             if (base.isNullOrBlank() || token.isNullOrBlank()) return@launch
-            _ui.update { it.copy(usageLoading = true) }
+            val clamped = days.coerceIn(7, 90)
+            _ui.update { it.copy(usageLoading = true, usageDays = clamped) }
             try {
                 val hist = withContext(Dispatchers.IO) {
-                    TikNetApi.getUsageHistory(base, token, days = 14)
+                    TikNetApi.getUsageHistory(base, token, days = clamped)
                 }
                 _ui.update {
                     it.copy(usageHistory = hist, usageLoading = false, usageMissing = false)

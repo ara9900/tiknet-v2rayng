@@ -82,7 +82,6 @@ import com.v2ray.ang.tiknet.TikNetApi
 import com.v2ray.ang.tiknet.TikNetApiException
 import com.v2ray.ang.R
 import com.v2ray.ang.ui.base.HelperBaseComponentActivity
-import com.v2ray.ang.ui.compose.ThemeManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -100,7 +99,6 @@ class TikNetLoginActivity : HelperBaseComponentActivity() {
     private val pendingLinkState = mutableStateOf<String?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        ThemeManager.setThemeMode("2")
         pendingLinkState.value = extractLink(intent)
         super.onCreate(savedInstanceState)
         // Must call super.onCreate before finish()/return or Android throws SuperNotCalledException.

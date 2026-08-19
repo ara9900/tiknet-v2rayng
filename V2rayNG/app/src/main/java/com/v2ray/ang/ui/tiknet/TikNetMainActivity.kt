@@ -18,7 +18,6 @@ import com.v2ray.ang.tiknet.TikNetBootstrap
 import com.v2ray.ang.tiknet.TikNetNetworkReconnect
 import com.v2ray.ang.tiknet.TikNetPrefs
 import com.v2ray.ang.ui.base.HelperBaseComponentActivity
-import com.v2ray.ang.ui.compose.ThemeManager
 import kotlinx.coroutines.flow.collectLatest
 
 class TikNetMainActivity : HelperBaseComponentActivity() {
@@ -37,7 +36,6 @@ class TikNetMainActivity : HelperBaseComponentActivity() {
         }
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        ThemeManager.setThemeMode("2")
         super.onCreate(savedInstanceState)
         // Must call super.onCreate before finish()/return or Android throws SuperNotCalledException.
         if (!TikNetPrefs.isLoggedIn(this)) {

@@ -153,4 +153,104 @@ object TikNetJalali {
         }
         return Triple(jy, jm, jd)
     }
+
+    data class JalaliDate(val year: Int, val month: Int, val day: Int) : Comparable<JalaliDate> {
+        override fun compareTo(other: JalaliDate): Int =
+            compareValuesBy(this, other, { it.year }, { it.month }, { it.day })
+
+        fun format(): String = String.format(Locale.US, "%04d/%02d/%02d", year, month, day)
+    }
+
+    val monthNamesFa = listOf(
+        "فروردین", "اردیبهشت", "خرداد", "تیر", "مرداد", "شهریور",
+        "مهر", "آبان", "آذر", "دی", "بهمن", "اسفند",
+    )
+
+    fun todayJalali(): JalaliDate {
+        val cal = Calendar.getInstance()
+        val (y, m, d) = gregorianToJalali(
+            cal.get(Calendar.YEAR),
+            cal.get(Calendar.MONTH) + 1,
+            cal.get(Calendar.DAY_OF_MONTH),
+        )
+        return JalaliDate(y, m, d)
+    }
+
+    fun parseToJalali(raw: String?): JalaliDate? {
+        if (raw.isNullOrBlank()) return null
+        val formatted = formatExpire(raw)
+        val parts = formatted.split('/')
+        if (parts.size != 3) return null
+        val y = parts[0].toIntOrNull() ?: return null
+        val m = parts[1].toIntOrNull() ?: return null
+        val d = parts[2].toIntOrNull() ?: return null
+        if (m !in 1..12 || d !in 1..31) return null
+        return JalaliDate(y, m, d)
+    }
+
+    fun isJalaliLeap(jy: Int): Boolean {
+        val r = jy % 33
+        return r == 1 || r == 5 || r == 9 || r == 13 || r == 17 || r == 22 || r == 26 || r == 30
+    }
+
+    fun monthLength(year: Int, month: Int): Int = when (month) {
+        in 1..6 -> 31
+        in 7..11 -> 30
+        12 -> if (isJalaliLeap(year)) 30 else 29
+        else -> 30
+    }
+
+    fun coerce(date: JalaliDate): JalaliDate {
+        val month = date.month.coerceIn(1, 12)
+        val maxDay = monthLength(date.year, month)
+        return JalaliDate(date.year, month, date.day.coerceIn(1, maxDay))
+    }
+
+    fun jalaliToGregorian(jy: Int, jm: Int, jd: Int): Triple<Int, Int, Int> {
+        val jy2 = jy + 1595
+        var days = -355668 + (365 * jy2) + (jy2 / 33) * 8 + ((jy2 % 33 + 3) / 4) + jd +
+            if (jm < 7) (jm - 1) * 31 else ((jm - 7) * 30) + 186
+        var gy = 400 * (days / 146097)
+        days %= 146097
+        if (days > 36524) {
+            gy += 100 * (--days / 36524)
+            days %= 36524
+            if (days >= 365) days++
+        }
+        gy += 4 * (days / 1461)
+        days %= 1461
+        if (days > 365) {
+            gy += (days - 1) / 365
+            days = (days - 1) % 365
+        }
+        var gd = days + 1
+        val salA = intArrayOf(
+            0, 31,
+            if ((gy % 4 == 0 && gy % 100 != 0) || gy % 400 == 0) 29 else 28,
+            31, 30, 31, 30, 31, 31, 30, 31, 30, 31,
+        )
+        var gm = 1
+        while (gm < 13 && gd > salA[gm]) {
+            gd -= salA[gm]
+            gm++
+        }
+        return Triple(gy, gm, gd)
+    }
+
+    fun toLocalDate(j: JalaliDate): java.time.LocalDate {
+        val c = coerce(j)
+        val (gy, gm, gd) = jalaliToGregorian(c.year, c.month, c.day)
+        return java.time.LocalDate.of(gy, gm, gd)
+    }
+
+    fun fromLocalDate(d: java.time.LocalDate): JalaliDate {
+        val (y, m, day) = gregorianToJalali(d.year, d.monthValue, d.dayOfMonth)
+        return JalaliDate(y, m, day)
+    }
+
+    fun daysInclusive(from: JalaliDate, to: JalaliDate): Int {
+        val start = toLocalDate(from)
+        val end = toLocalDate(to)
+        return (java.time.temporal.ChronoUnit.DAYS.between(start, end).toInt() + 1).coerceAtLeast(1)
+    }
 }
