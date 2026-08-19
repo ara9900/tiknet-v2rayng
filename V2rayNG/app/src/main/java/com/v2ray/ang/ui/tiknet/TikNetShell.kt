@@ -969,7 +969,9 @@ private fun InnerTopBar(
             overflow = TextOverflow.Ellipsis,
         )
         Box(Modifier.width(48.dp), contentAlignment = Alignment.Center) {
-            actions()
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                actions()
+            }
         }
     }
 }
@@ -4190,6 +4192,8 @@ private fun SheetHeader(title: String, onClose: () -> Unit) {
 
 /* ───────────────────────── helpers ───────────────────────── */
 
+@Composable
+@ReadOnlyComposable
 private fun statusColor(state: TikNetMainUiState): Color = when {
     state.smartPicking -> TikConnecting
     state.phase == TikNetConnPhase.Connected -> TikConnected
