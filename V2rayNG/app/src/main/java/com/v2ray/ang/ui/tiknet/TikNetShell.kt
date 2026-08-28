@@ -446,7 +446,6 @@ fun TikNetShell(
                             state = state,
                             onBack = { tab = TikNetTab.Connect },
                             onIranDirectChange = { viewModel.setIranDirectEnabled(it) },
-                            onReconnectChange = { viewModel.setReconnectOnNetworkEnabled(it) },
                             onWidgetModeChange = { viewModel.setWidgetMode(it) },
                             onWidgetServerChange = { viewModel.setWidgetServerGuid(it) },
                             onPinWidget = { viewModel.pinHomeWidget(com.v2ray.ang.tiknet.TikNetWidgetPin.Kind.Full) },
@@ -825,7 +824,7 @@ private fun TikNetAppDrawer(
             DrawerNavItem(
                 icon = Icons.Outlined.Settings,
                 title = "تنظیمات",
-                subtitle = "مسیریابی، ویجت و وصل مجدد",
+                subtitle = "مسیریابی و ویجت",
                 selected = current == TikNetTab.Settings,
                 onClick = { onSelectTab(TikNetTab.Settings) },
             )
@@ -2858,51 +2857,12 @@ private fun ReferralProgressBox(info: TikNetReferralInfo) {
 private fun ConnectionSettingsCard(
     state: TikNetMainUiState,
     onIranDirectChange: (Boolean) -> Unit,
-    onReconnectChange: (Boolean) -> Unit = {},
     onWidgetModeChange: (String) -> Unit,
     onWidgetServerChange: (String?) -> Unit,
     onPinWidget: () -> Unit = {},
     onPinCompactWidget: () -> Unit = {},
 ) {
     Column(Modifier.fillMaxWidth()) {
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(14.dp))
-                .background(TikSurface)
-                .border(1.dp, TikBorder, RoundedCornerShape(14.dp))
-                .padding(14.dp),
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        "وصل شدن دوباره وقتی شبکه برگشت",
-                        color = TikOnBg,
-                        fontWeight = FontWeight.SemiBold,
-                        fontSize = 14.sp,
-                    )
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        "اگر اینترنت قطع شد و تونل افتاد، بعد از برگشت شبکه دوباره وصل می‌شود.",
-                        color = TikMuted,
-                        fontSize = 12.sp,
-                        lineHeight = 17.sp,
-                    )
-                }
-                Switch(
-                    checked = state.reconnectOnNetwork,
-                    onCheckedChange = onReconnectChange,
-                    colors = SwitchDefaults.colors(
-                        checkedThumbColor = Color.White,
-                        checkedTrackColor = TikPrimary,
-                        uncheckedThumbColor = Color.White,
-                        uncheckedTrackColor = TikMuted.copy(alpha = 0.35f),
-                    ),
-                )
-            }
-        }
-
-        Spacer(Modifier.height(12.dp))
         Column(
             Modifier
                 .fillMaxWidth()
@@ -3707,7 +3667,6 @@ private fun SettingsTab(
     state: TikNetMainUiState,
     onBack: () -> Unit,
     onIranDirectChange: (Boolean) -> Unit,
-    onReconnectChange: (Boolean) -> Unit,
     onWidgetModeChange: (String) -> Unit,
     onWidgetServerChange: (String?) -> Unit,
     onPinWidget: () -> Unit,
@@ -3741,11 +3700,10 @@ private fun SettingsTab(
         Text("اتصال، ویجت و پشتیبانی", color = TikMuted, fontSize = 13.sp)
 
         Spacer(Modifier.height(18.dp))
-        AccountSectionLabel("اتصال", "مسیریابی و وصل مجدد")
+        AccountSectionLabel("اتصال", "مسیریابی و ویجت")
         ConnectionSettingsCard(
             state = state,
             onIranDirectChange = onIranDirectChange,
-            onReconnectChange = onReconnectChange,
             onWidgetModeChange = onWidgetModeChange,
             onWidgetServerChange = onWidgetServerChange,
             onPinWidget = onPinWidget,

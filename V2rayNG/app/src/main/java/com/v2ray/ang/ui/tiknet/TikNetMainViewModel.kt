@@ -29,7 +29,6 @@ import com.v2ray.ang.tiknet.TikNetFaqItem
 import com.v2ray.ang.tiknet.TikNetNotificationItem
 import com.v2ray.ang.tiknet.TikNetErrors
 import com.v2ray.ang.tiknet.TikNetPrefs
-import com.v2ray.ang.tiknet.TikNetPingCache
 import com.v2ray.ang.tiknet.TikNetReferralInfo
 import com.v2ray.ang.tiknet.TikNetSession
 import com.v2ray.ang.tiknet.TikNetSync
@@ -126,7 +125,6 @@ data class TikNetMainUiState(
     val iranDirectEnabled: Boolean = true,
     val widgetMode: String = TikNetPrefs.WIDGET_MODE_CURRENT,
     val widgetServerGuid: String? = null,
-    val reconnectOnNetwork: Boolean = true,
     val usageHistory: TikNetUsageHistory? = null,
     val usageDays: Int = 14,
     val usageLoading: Boolean = false,
@@ -170,7 +168,6 @@ class TikNetMainViewModel(
     private var iranRoutingJob: Job? = null
     private val iranRoutingSeq = AtomicInteger(0)
     private val iranRoutingLock = Any()
-    private var networkReconnectAttempts = 0
 
     init {
         // Enable live speed notifications → traffic broadcast for details
@@ -191,7 +188,6 @@ class TikNetMainViewModel(
                     iranDirectEnabled = TikNetPrefs.isIranDirectEnabled(application),
                     widgetMode = TikNetPrefs.getWidgetMode(application),
                     widgetServerGuid = TikNetPrefs.getWidgetServerGuid(application),
-                    reconnectOnNetwork = TikNetPrefs.isReconnectOnNetworkEnabled(application),
                 )
             }
         } else {
@@ -201,7 +197,6 @@ class TikNetMainViewModel(
                     iranDirectEnabled = TikNetPrefs.isIranDirectEnabled(application),
                     widgetMode = TikNetPrefs.getWidgetMode(application),
                     widgetServerGuid = TikNetPrefs.getWidgetServerGuid(application),
-                    reconnectOnNetwork = TikNetPrefs.isReconnectOnNetworkEnabled(application),
                 )
             }
         }
@@ -234,9 +229,7 @@ class TikNetMainViewModel(
                 when (event) {
                     MainServiceEvent.StateRunning,
                     MainServiceEvent.StateStartSuccess -> {
-                        TikNetPingCache.clearFailover(getApplication())
                         TikNetPrefs.setWantConnected(getApplication(), true)
-                        networkReconnectAttempts = 0
                         _ui.update {
                             it.copy(
                                 phase = TikNetConnPhase.Connected,
@@ -266,7 +259,6 @@ class TikNetMainViewModel(
                     MainServiceEvent.StateNotRunning,
                     MainServiceEvent.StateStopSuccess -> {
                         stopUptimeTicker()
-                        TikNetPingCache.clearFailover(getApplication())
                         _ui.update {
                             it.copy(
                                 phase = TikNetConnPhase.Disconnected,
@@ -282,28 +274,13 @@ class TikNetMainViewModel(
                     }
 
                     is MainServiceEvent.StateStartFailure -> {
-                        val ctx = getApplication<Application>()
-                        if (_ui.value.smartMode && !TikNetPingCache.isFailoverUsed(ctx) && !pendingSmartConnect) {
-                            // Cached best failed on this network → one forced re-ping + reconnect.
-                            TikNetPingCache.markFailoverUsed(ctx)
-                            TikNetPingCache.invalidate(ctx)
-                            _ui.update {
-                                it.copy(
-                                    error = null,
-                                    syncMessage = "پینگ تازه به‌خاطر تغییر شبکه…",
-                                )
-                            }
-                            lastSmartConnectAtMs = 0L
-                            startSmartPingThenConnect()
-                        } else {
-                            _ui.update {
-                                it.copy(
-                                    phase = TikNetConnPhase.Disconnected,
-                                    busy = false,
-                                    smartPicking = false,
-                                    error = event.errorMessage.ifBlank { "اتصال ناموفق" },
-                                )
-                            }
+                        _ui.update {
+                            it.copy(
+                                phase = TikNetConnPhase.Disconnected,
+                                busy = false,
+                                smartPicking = false,
+                                error = event.errorMessage.ifBlank { "اتصال ناموفق" },
+                            )
                         }
                     }
 
@@ -359,17 +336,13 @@ class TikNetMainViewModel(
                                 pendingSmartSwitch = false
                                 val best = pickBestGuid()
                                 if (best != null && best != _ui.value.selectedGuid) {
-                                    TikNetPingCache.rememberSuccessfulBatch(getApplication())
                                     selectServer(best, smartLabel = true)
                                     _events.tryEmit(TikNetUiEvent.RestartVpn)
                                 } else {
                                     _ui.update { it.copy(smartPicking = false) }
                                 }
                             }
-                            else -> {
-                                // Manual / list ping — refresh cache TTL when results are usable.
-                                TikNetPingCache.rememberSuccessfulBatch(getApplication())
-                            }
+                            else -> Unit
                         }
                     }
 
@@ -697,7 +670,6 @@ class TikNetMainViewModel(
     private fun finishSmartPickAndConnect() {
         val best = pickBestGuid()
         if (best != null) {
-            TikNetPingCache.rememberSuccessfulBatch(getApplication())
             selectServer(best, smartLabel = true)
             _events.tryEmit(TikNetUiEvent.StartVpn)
         } else {
@@ -712,27 +684,7 @@ class TikNetMainViewModel(
         }
     }
 
-    private fun connectSmartFromCache() {
-        val best = pickBestGuid()
-        if (best == null) {
-            startSmartPingThenConnect()
-            return
-        }
-        _ui.update {
-            it.copy(
-                phase = TikNetConnPhase.Connecting,
-                smartPicking = false,
-                busy = true,
-                selectedTitle = "اتصال هوشمند",
-                syncMessage = "وصل سریع با پینگ ذخیره‌شده…",
-            )
-        }
-        selectServer(best, smartLabel = true)
-        markConnecting()
-        _events.tryEmit(TikNetUiEvent.StartVpn)
-    }
-
-    /** Power button: smart → cache or ping-then-connect; manual → connect selected. */
+    /** Power button: smart → fresh ping then connect; manual → connect selected. */
     fun requestConnect() {
         _ui.update { it.copy(error = null) }
         if (_ui.value.smartMode) {
@@ -740,12 +692,7 @@ class TikNetMainViewModel(
             if (pendingSmartConnect || _ui.value.smartPicking) return
             if (now - lastSmartConnectAtMs < 1_200L) return
             lastSmartConnectAtMs = now
-            val ctx = getApplication<Application>()
-            if (TikNetPingCache.isFresh(ctx)) {
-                connectSmartFromCache()
-            } else {
-                startSmartPingThenConnect()
-            }
+            startSmartPingThenConnect()
         } else {
             if (!ensureServerSelected()) {
                 _ui.update { it.copy(error = "ابتدا سرور را انتخاب کنید یا اشتراک را بروزرسانی کنید") }
@@ -1347,36 +1294,6 @@ class TikNetMainViewModel(
                 }
             }
         }
-    }
-
-    fun setReconnectOnNetworkEnabled(enabled: Boolean) {
-        TikNetPrefs.setReconnectOnNetworkEnabled(getApplication(), enabled)
-        _ui.update { it.copy(reconnectOnNetwork = enabled) }
-    }
-
-    fun onUnderlayNetworkAvailable() {
-        val ctx = getApplication<Application>()
-        if (!TikNetPrefs.isReconnectOnNetworkEnabled(ctx)) return
-        if (!TikNetPrefs.isWantConnected(ctx)) return
-        if (!TikNetPrefs.isLoggedIn(ctx)) return
-        val user = _ui.value.user
-        if (user?.isExpired == true || user?.hasSubscription == false) return
-        val phase = _ui.value.phase
-        if (phase == TikNetConnPhase.Connected ||
-            phase == TikNetConnPhase.Connecting ||
-            phase == TikNetConnPhase.Disconnecting
-        ) {
-            return
-        }
-        if (runCatching { CoreServiceManager.isRunning() }.getOrDefault(false)) return
-        if (networkReconnectAttempts >= 2) return
-        networkReconnectAttempts += 1
-        _ui.update { it.copy(syncMessage = "شبکه عوض شد؛ دوباره وصل می‌شود…") }
-        requestConnect()
-    }
-
-    fun onUnderlayNetworkLost() {
-        networkReconnectAttempts = 0
     }
 
     private fun isTikNetVpnActive(): Boolean {

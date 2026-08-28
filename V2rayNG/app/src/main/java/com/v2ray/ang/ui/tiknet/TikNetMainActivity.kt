@@ -10,22 +10,23 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.lifecycleScope
 import com.v2ray.ang.AngApplication
 import com.v2ray.ang.core.LauncherManager
 import com.v2ray.ang.enums.PermissionType
 import com.v2ray.ang.handler.SettingsManager
 import com.v2ray.ang.tiknet.TikNetBootstrap
-import com.v2ray.ang.tiknet.TikNetNetworkReconnect
 import com.v2ray.ang.tiknet.TikNetPrefs
 import com.v2ray.ang.ui.base.HelperBaseComponentActivity
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.launch
 
 class TikNetMainActivity : HelperBaseComponentActivity() {
 
     private val viewModel: TikNetMainViewModel by viewModels {
         TikNetMainViewModel.Companion.Factory(application as AngApplication)
     }
-    private var networkReconnect: TikNetNetworkReconnect? = null
 
     private val requestVpnPermission =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
@@ -45,12 +46,6 @@ class TikNetMainActivity : HelperBaseComponentActivity() {
         }
         TikNetBootstrap.applyDefaults(this)
         checkAndRequestPermission(PermissionType.POST_NOTIFICATIONS) {}
-        networkReconnect = TikNetNetworkReconnect(
-            this,
-            onUnderlayAvailable = { viewModel.onUnderlayNetworkAvailable() },
-            onUnderlayLost = { viewModel.onUnderlayNetworkLost() },
-        )
-        networkReconnect?.register()
         if (intent?.getBooleanExtra(com.v2ray.ang.tiknet.TikNetWidgetPin.EXTRA_WIDGET_PINNED, false) == true) {
             viewModel.showMessage(getString(com.v2ray.ang.R.string.tiknet_widget_pinned_ok))
             intent?.removeExtra(com.v2ray.ang.tiknet.TikNetWidgetPin.EXTRA_WIDGET_PINNED)
@@ -66,11 +61,7 @@ class TikNetMainActivity : HelperBaseComponentActivity() {
             viewModel.events.collectLatest { event ->
                 when (event) {
                     TikNetUiEvent.StartVpn -> startVpnOrService()
-                    TikNetUiEvent.RestartVpn -> {
-                        viewModel.markConnecting()
-                        LauncherManager.stopService(this@TikNetMainActivity)
-                        window.decorView.postDelayed({ startVpnOrService() }, 450)
-                    }
+                    TikNetUiEvent.RestartVpn -> restartVpnAfterStop()
                     is TikNetUiEvent.Toast -> {
                         // temporarily reuse syncMessage for toast text on account/connect
                         viewModel.ui.value.let {
@@ -89,9 +80,7 @@ class TikNetMainActivity : HelperBaseComponentActivity() {
                 val wasConnected = state.phase == TikNetConnPhase.Connected
                 viewModel.selectServer(guid)
                 if (wasConnected) {
-                    viewModel.markConnecting()
-                    LauncherManager.stopService(this)
-                    window.decorView.postDelayed({ startVpnOrService() }, 450)
+                    restartVpnAfterStop()
                 }
             },
             onSmartMode = { viewModel.enableSmartMode() },
@@ -107,12 +96,19 @@ class TikNetMainActivity : HelperBaseComponentActivity() {
             },
             onFilterChangedRestart = {
                 if (state.phase == TikNetConnPhase.Connected) {
-                    viewModel.markConnecting()
-                    LauncherManager.stopService(this)
-                    window.decorView.postDelayed({ startVpnOrService() }, 450)
+                    restartVpnAfterStop()
                 }
             },
         )
+    }
+
+    private fun restartVpnAfterStop() {
+        viewModel.markConnecting()
+        LauncherManager.stopService(this)
+        lifecycleScope.launch {
+            delay(500)
+            startVpnOrService()
+        }
     }
 
     private fun toggleConnection() {
@@ -144,11 +140,5 @@ class TikNetMainActivity : HelperBaseComponentActivity() {
         } else {
             LauncherManager.startService(this)
         }
-    }
-
-    override fun onDestroy() {
-        networkReconnect?.unregister()
-        networkReconnect = null
-        super.onDestroy()
     }
 }

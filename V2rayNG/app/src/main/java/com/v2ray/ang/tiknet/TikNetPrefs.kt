@@ -23,7 +23,6 @@ object TikNetPrefs {
     private const val KEY_WIDGET_SMART_PENDING = "widget_smart_pending"
     private const val KEY_IRAN_DIRECT = "iran_direct_routing_enabled"
     private const val KEY_WANT_CONNECTED = "want_connected"
-    private const val KEY_RECONNECT_ON_NETWORK = "reconnect_on_network"
 
     const val WIDGET_MODE_CURRENT = "current"
     const val WIDGET_MODE_SMART = "smart"
@@ -202,13 +201,5 @@ object TikNetPrefs {
 
     fun setWantConnected(ctx: Context, want: Boolean) {
         prefs(ctx).edit().putBoolean(KEY_WANT_CONNECTED, want).apply()
-    }
-
-    /** Default true — reconnect when underlay network returns after a drop. */
-    fun isReconnectOnNetworkEnabled(ctx: Context): Boolean =
-        prefs(ctx).getBoolean(KEY_RECONNECT_ON_NETWORK, true)
-
-    fun setReconnectOnNetworkEnabled(ctx: Context, enabled: Boolean) {
-        prefs(ctx).edit().putBoolean(KEY_RECONNECT_ON_NETWORK, enabled).apply()
     }
 }
