@@ -728,6 +728,7 @@ object TikNetApi {
 
     /** Resolve panel base URL like Flutter ConfigService. */
     fun resolveBaseUrl(ctx: Context): String {
+        TikNetBrand.apiBaseUrl(ctx)?.let { if (healthOk(it)) return it }
         val sources = listOf(
             "https://ara9900.github.io/app-config/config.json",
             "https://panel.tikn.ir/static/config.json",

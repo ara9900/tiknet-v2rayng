@@ -33,6 +33,8 @@ object TikNetAppUpdateController {
         .build()
 
     suspend fun check(ctx: Context): TikNetAppUpdateState = withContext(Dispatchers.IO) {
+        // Branded builds have their own applicationId; the main OTA APK would install as a second app.
+        if (TikNetBrand.isBranded(ctx)) return@withContext TikNetAppUpdateState.UpToDate
         val base = TikNetPrefs.getBaseUrl(ctx)
             ?: runCatching { TikNetApi.resolveBaseUrl(ctx) }.getOrNull()
             ?: return@withContext TikNetAppUpdateState.Idle

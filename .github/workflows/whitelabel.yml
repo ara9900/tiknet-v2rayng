@@ -1,0 +1,209 @@
+# Reseller white-label APK build, dispatched by the TikNet panel (admin → برند اختصاصی).
+# The panel finds the run by `run-name` and downloads the artifact `brand-<job_id>`;
+# keep both names exactly as below. Signing uses the same secrets as build.yml.
+
+name: whitelabel
+run-name: whitelabel-${{ inputs.job_id }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      app_name:
+        description: App display name
+        required: true
+      application_id:
+        description: Android applicationId (unique per reseller)
+        required: true
+      logo_url:
+        description: Public URL of a 512x512 PNG icon
+        required: true
+      api_base_url:
+        description: Panel base URL the app talks to
+        required: true
+      brand_code:
+        description: Reseller username
+        required: true
+      primary_color:
+        description: Primary color (#RRGGBB)
+        required: false
+        default: "#1E88E5"
+      job_id:
+        description: Panel build job id
+        required: true
+
+concurrency:
+  group: whitelabel-${{ inputs.brand_code }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  APP_DIR: V2rayNG/app
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v7
+      with:
+        submodules: 'recursive'
+        fetch-depth: '0'
+
+    - name: Validate inputs
+      env:
+        APP_ID: ${{ inputs.application_id }}
+        COLOR: ${{ inputs.primary_color }}
+        LOGO: ${{ inputs.logo_url }}
+        API: ${{ inputs.api_base_url }}
+      run: |
+        [[ "$APP_ID" =~ ^[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z][a-zA-Z0-9_]*)+$ ]] || { echo "::error::bad application_id"; exit 1; }
+        [[ "$COLOR" =~ ^#[0-9A-Fa-f]{6}$ ]] || { echo "::error::bad primary_color"; exit 1; }
+        [[ "$LOGO" =~ ^https?:// ]] || { echo "::error::bad logo_url"; exit 1; }
+        [[ "$API" =~ ^https?:// ]] || { echo "::error::bad api_base_url"; exit 1; }
+
+    - name: Apply brand (name, applicationId, icons, brand.json)
+      env:
+        APP_NAME: ${{ inputs.app_name }}
+        APP_ID: ${{ inputs.application_id }}
+        LOGO: ${{ inputs.logo_url }}
+        API: ${{ inputs.api_base_url }}
+        BRAND: ${{ inputs.brand_code }}
+        COLOR: ${{ inputs.primary_color }}
+      run: |
+        set -euo pipefail
+        sudo apt-get update -y -qq && sudo apt-get install -y -qq imagemagick
+        GRADLE="$APP_DIR/build.gradle.kts"
+
+        # applicationId only; namespace stays com.v2ray.ang so R/BuildConfig still compile
+        sed -i -E "s/applicationId\s*=\s*\"[^\"]+\"/applicationId = \"${APP_ID}\"/" "$GRADLE"
+        grep -q "applicationId = \"${APP_ID}\"" "$GRADLE"
+
+        python3 - <<'PY'
+        import glob, os, re
+        from xml.sax.saxutils import escape
+        name = escape(os.environ["APP_NAME"]).replace("'", "\\'")
+        for path in glob.glob(os.path.join(os.environ["APP_DIR"], "src/main/res/values*/strings.xml")):
+            text = open(path, encoding="utf-8").read()
+            new = re.sub(r'(<string name="app_name"[^>]*>)(.*?)(</string>)', lambda m: m.group(1) + name + m.group(3), text)
+            if new != text:
+                open(path, "w", encoding="utf-8").write(new)
+        PY
+
+        curl -fsSL --retry 3 --max-time 60 "$LOGO" -o /tmp/logo.png
+        identify /tmp/logo.png
+        RES="$APP_DIR/src/main/res"
+        for spec in mdpi:48 hdpi:72 xhdpi:96 xxhdpi:144 xxxhdpi:192; do
+          d="${spec%%:*}"; s="${spec##*:}"
+          mkdir -p "$RES/mipmap-$d"
+          convert /tmp/logo.png -resize "${s}x${s}" -background none -gravity center -extent "${s}x${s}" "$RES/mipmap-$d/ic_launcher.png"
+          cp "$RES/mipmap-$d/ic_launcher.png" "$RES/mipmap-$d/ic_launcher_round.png"
+        done
+        # Adaptive icons (API 26+) would override the PNGs above
+        rm -f "$RES/mipmap-anydpi-v26/ic_launcher.xml" "$RES/mipmap-anydpi-v26/ic_launcher_round.xml"
+
+        mkdir -p "$APP_DIR/src/main/assets"
+        python3 - <<'PY'
+        import json, os
+        cfg = {
+            "api_base_url": os.environ["API"].rstrip("/"),
+            "brand_code": os.environ["BRAND"],
+            "app_name": os.environ["APP_NAME"],
+            "primary_color": os.environ["COLOR"],
+        }
+        with open(os.path.join(os.environ["APP_DIR"], "src/main/assets/brand.json"), "w", encoding="utf-8") as f:
+            json.dump(cfg, f, ensure_ascii=False, indent=2)
+        print(cfg)
+        PY
+
+    - name: Setup Android SDK
+      uses: android-actions/setup-android@v4
+      with:
+        log-accepted-android-sdk-licenses: false
+        cmdline-tools-version: '14742923'
+        packages: 'platforms;android-37.0 build-tools;37.0.0 platform-tools'
+
+    - name: Install NDK
+      run: |
+        echo "y" | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager \
+          --channel=0 \
+          --install "ndk;29.0.14206865"
+        echo "NDK_HOME=$ANDROID_HOME/ndk/29.0.14206865" >> $GITHUB_ENV
+        sed -i '10i\
+        \
+            ndkVersion = "29.0.14206865"' ${{ github.workspace }}/V2rayNG/app/build.gradle.kts
+
+    - name: Restore cached libhevtun
+      id: cache-libhevtun-restore
+      uses: actions/cache/restore@v6
+      with:
+        path: ${{ github.workspace }}/libs
+        key: libhevtun-${{ runner.os }}-${{ env.NDK_HOME }}-${{ hashFiles('.git/modules/hev-socks5-tunnel/HEAD') }}-${{ hashFiles('compile-hevtun.sh') }}
+
+    - name: Build libhevtun
+      if: steps.cache-libhevtun-restore.outputs.cache-hit != 'true'
+      run: bash compile-hevtun.sh
+
+    - name: Copy libhevtun
+      run: cp -r ${{ github.workspace }}/libs ${{ github.workspace }}/V2rayNG/app
+
+    - name: Fetch AndroidLibXrayLite tag
+      run: |
+        pushd AndroidLibXrayLite
+        echo "CURRENT_TAG=$(git describe --tags --abbrev=0)" >> $GITHUB_ENV
+        popd
+
+    - name: Download libv2ray
+      uses: robinraju/release-downloader@v1.13
+      with:
+        repository: '2dust/AndroidLibXrayLite'
+        tag: ${{ env.CURRENT_TAG }}
+        fileName: 'libv2ray.aar'
+        out-file-path: V2rayNG/app/libs/
+
+    - name: Setup Java
+      uses: actions/setup-java@v5.7.0
+      with:
+        distribution: 'temurin'
+        java-version: '21'
+
+    - name: Prepare signing keystore
+      id: android_keystore
+      env:
+        ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        ANDROID_KEYSTORE_ALIAS: ${{ secrets.ANDROID_KEYSTORE_ALIAS }}
+      run: |
+        KEYSTORE_PATH="${{ github.workspace }}/android_keystore.jks"
+        if [ -z "$ANDROID_KEYSTORE_BASE64" ]; then
+          echo "::error::Secret ANDROID_KEYSTORE_BASE64 is required."
+          exit 1
+        fi
+        echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$KEYSTORE_PATH"
+        STORE_PASS="${ANDROID_KEYSTORE_PASSWORD:-tiknet123}"
+        echo "filePath=$KEYSTORE_PATH" >> $GITHUB_OUTPUT
+        echo "store_password=$STORE_PASS" >> $GITHUB_OUTPUT
+        echo "key_alias=${ANDROID_KEYSTORE_ALIAS:-tiknet}" >> $GITHUB_OUTPUT
+        echo "key_password=$STORE_PASS" >> $GITHUB_OUTPUT
+
+    - name: Build APK
+      run: |
+        cd ${{ github.workspace }}/V2rayNG
+        echo "sdk.dir=${ANDROID_HOME}" > local.properties
+        chmod 755 gradlew
+        ./gradlew assemblePlaystoreRelease \
+          -Pandroid.injected.signing.store.file=${{ steps.android_keystore.outputs.filePath }} \
+          -Pandroid.injected.signing.store.password=${{ steps.android_keystore.outputs.store_password }} \
+          -Pandroid.injected.signing.key.alias=${{ steps.android_keystore.outputs.key_alias }} \
+          -Pandroid.injected.signing.key.password=${{ steps.android_keystore.outputs.key_password }}
+
+    - name: Upload universal APK
+      uses: actions/upload-artifact@v7
+      with:
+        name: brand-${{ inputs.job_id }}
+        path: ${{ github.workspace }}/V2rayNG/app/build/outputs/apk/*/release/*universal*.apk
+        retention-days: 3
+        if-no-files-found: error
