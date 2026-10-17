@@ -1,4 +1,7 @@
-# Reseller white-label APK build, dispatched by the TikNet panel (admin → برند اختصاصی).
+# Copy of .github/workflows/whitelabel.yml in the app repo (ara9900/tiknet-v2rayng).
+# That repo also needs TikNetBrand.kt (reads assets/brand.json) so branded builds use the reseller domain.
+
+# Reseller white-label APK build, dispatched by the TikNet panel (admin â†’ ط¨ط±ظ†ط¯ ط§ط®طھطµط§طµغŒ).
 # The panel finds the run by `run-name` and downloads the artifact `brand-<job_id>`;
 # keep both names exactly as below. Signing uses the same secrets as build.yml.
 
@@ -30,6 +33,13 @@ on:
       job_id:
         description: Panel build job id
         required: true
+      version_code:
+        description: Android versionCode for OTA (must match panel job.version_code)
+        required: true
+      version_name:
+        description: Android versionName shown to users
+        required: false
+        default: ""
 
 concurrency:
   group: whitelabel-${{ inputs.brand_code }}
@@ -73,6 +83,8 @@ jobs:
         API: ${{ inputs.api_base_url }}
         BRAND: ${{ inputs.brand_code }}
         COLOR: ${{ inputs.primary_color }}
+        VERSION_CODE: ${{ inputs.version_code }}
+        VERSION_NAME: ${{ inputs.version_name }}
       run: |
         set -euo pipefail
         sudo apt-get update -y -qq && sudo apt-get install -y -qq imagemagick
@@ -83,6 +95,16 @@ jobs:
         # applicationId only; namespace stays com.v2ray.ang so R/BuildConfig still compile
         sed -i -E "s/applicationId\s*=\s*\"[^\"]+\"/applicationId = \"${APP_ID}\"/" "$GRADLE"
         grep -q "applicationId = \"${APP_ID}\"" "$GRADLE"
+
+        # versionCode / versionName — must match panel OTA payload for branded updates
+        VC="${VERSION_CODE}"
+        VN="${VERSION_NAME:-$VC}"
+        [[ "$VC" =~ ^[0-9]+$ ]] || { echo "::error::bad version_code"; exit 1; }
+        VN_ESC=$(printf '%s' "$VN" | sed -e 's/[\/&]/\\&/g')
+        sed -i -E "s/versionCode\s*=\s*[0-9]+/versionCode = ${VC}/" "$GRADLE"
+        sed -i -E "s/versionName\s*=\s*\"[^\"]+\"/versionName = \"${VN_ESC}\"/" "$GRADLE"
+        grep -q "versionCode = ${VC}" "$GRADLE"
+        grep -q "versionName = \"${VN_ESC}\"" "$GRADLE"
 
         python3 - <<'PY'
         import glob, os, re
