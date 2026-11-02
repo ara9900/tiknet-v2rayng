@@ -148,6 +148,10 @@ class CoreTestService : Service() {
             is RealPingEvent.Result -> {
                 MmkvManager.encodeServerTestDelayMillis(event.guid, event.delayMillis)
                 MessageHelper.sendMsg2UI(this, AppConfig.MSG_MEASURE_CONFIG_SUCCESS, event.guid)
+                // TikNet: anonymous per-config quality → panel operator matrix
+                com.v2ray.ang.tiknet.TikNetTelemetry.reportDelayAsync(
+                    this, event.guid, event.delayMillis,
+                )
             }
 
             is RealPingEvent.Finish -> {

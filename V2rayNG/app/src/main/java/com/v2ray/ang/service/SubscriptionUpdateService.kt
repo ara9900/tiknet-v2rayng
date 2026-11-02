@@ -204,6 +204,9 @@ class SubscriptionUpdateService : Service() {
 
             is RealPingEvent.Result -> {
                 MmkvManager.encodeServerTestDelayMillis(event.guid, event.delayMillis)
+                com.v2ray.ang.tiknet.TikNetTelemetry.reportDelayAsync(
+                    this, event.guid, event.delayMillis,
+                )
             }
 
             is RealPingEvent.Finish -> {

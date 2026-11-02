@@ -31,6 +31,8 @@ object TikNetSync {
         sub.enabled = true
         sub.lastUpdated = System.currentTimeMillis()
         MmkvManager.encodeSubscription(TikNetPrefs.TIKNET_SUB_GUID, sub)
+        // Refresh tag map so subsequent real-ping reports include panel tags.
+        TikNetTelemetry.refreshTagMapAsync(ctx)
         return count
     }
 

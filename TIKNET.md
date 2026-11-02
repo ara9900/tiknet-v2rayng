@@ -4,7 +4,8 @@ Fork of [2dust/v2rayNG](https://github.com/2dust/v2rayNG) for **TikNet**.
 
 - **Package:** `com.tik.net` (same as Flutter TikNet — panel in-app update installs over previous)
 - **Signing:** same production keystore as Flutter TikNet (`ANDROID_KEYSTORE_*` secrets)
-- **versionCode:** must stay higher than last Flutter build (currently `40331` / `4.3.31`)
+- **versionCode:** must stay higher than last Flutter build (currently `40332` / `4.3.32`)
+- **Quality telemetry:** after real-ping / auto-test, app POSTs `link_quality` to the panel (ASN×config matrix at `/admin/app-telemetry`).
 
 ## Dual product (same APK)
 

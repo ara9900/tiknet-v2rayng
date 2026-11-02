@@ -857,4 +857,110 @@ object TikNetApi {
             emptyList()
         }
     }
+
+    data class SubscriptionLine(
+        val tag: String = "",
+        val uri: String = "",
+        val kind: String = "",
+        val country: String = "",
+        val host: String? = null,
+        val port: Int? = null,
+        @SerializedName("node_id") val nodeId: Int? = null,
+    )
+
+    /** GET /api/customer/subscription/lines — tagged configs for quality telemetry. */
+    fun getSubscriptionLines(baseUrl: String, token: String): List<SubscriptionLine> {
+        return try {
+            val req = Request.Builder()
+                .url("${root(baseUrl)}/api/customer/subscription/lines")
+                .get()
+                .header("Authorization", "Bearer $token")
+                .header("Accept", "application/json")
+                .header("Cache-Control", "no-cache")
+                .build()
+            client.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) return emptyList()
+                val text = resp.body?.string().orEmpty()
+                val rootEl = JsonParser.parseString(text).asJsonObject
+                val arr = rootEl.getAsJsonArray("lines") ?: return emptyList()
+                arr.mapNotNull { el ->
+                    if (!el.isJsonObject) return@mapNotNull null
+                    val o = el.asJsonObject
+                    val uri = o.get("uri")?.takeIf { it.isJsonPrimitive }?.asString.orEmpty()
+                    val tag = o.get("tag")?.takeIf { it.isJsonPrimitive }?.asString.orEmpty()
+                    if (uri.isBlank() && tag.isBlank()) return@mapNotNull null
+                    val hostPort = parseShareHostPort(uri)
+                    SubscriptionLine(
+                        tag = tag,
+                        uri = uri,
+                        kind = o.get("kind")?.takeIf { it.isJsonPrimitive }?.asString.orEmpty(),
+                        country = o.get("country")?.takeIf { it.isJsonPrimitive }?.asString.orEmpty(),
+                        host = hostPort?.first,
+                        port = hostPort?.second,
+                        nodeId = o.get("node_id")?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isNumber }?.asInt,
+                    )
+                }
+            }
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    /**
+     * POST /api/customer/telemetry — anonymous; 204 when panel collection is off.
+     * Does not throw on soft failures (disabled / rate-limit / older panel).
+     */
+    fun postTelemetry(
+        baseUrl: String,
+        event: String,
+        appVersion: String,
+        versionCode: Int? = null,
+        platform: String = "android",
+        deviceModel: String = "",
+        androidSdk: Int? = null,
+        payload: Map<String, Any?> = emptyMap(),
+    ): Boolean {
+        return try {
+            val bodyMap = mutableMapOf<String, Any?>(
+                "event" to event,
+                "app_version" to appVersion,
+                "platform" to platform,
+                "device_model" to deviceModel,
+                "payload" to payload,
+            )
+            if (versionCode != null) bodyMap["version_code"] = versionCode
+            if (androidSdk != null) bodyMap["android_sdk"] = androidSdk
+            val body = gson.toJson(bodyMap).toRequestBody(jsonMedia)
+            val req = Request.Builder()
+                .url("${root(baseUrl)}/api/customer/telemetry")
+                .post(body)
+                .header("Accept", "application/json")
+                .build()
+            client.newCall(req).execute().use { resp ->
+                resp.code == 201 || resp.code == 204
+            }
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    private fun parseShareHostPort(uri: String): Pair<String, Int>? {
+        val at = uri.indexOf('@')
+        if (at < 0) return null
+        var rest = uri.substring(at + 1)
+        val cut = rest.indexOfAny(charArrayOf('/', '?', '#'))
+        if (cut >= 0) rest = rest.substring(0, cut)
+        if (rest.startsWith("[")) {
+            val end = rest.indexOf(']')
+            if (end < 0) return null
+            val host = rest.substring(1, end).lowercase()
+            val port = rest.substring(end + 1).removePrefix(":").toIntOrNull() ?: return null
+            return host to port
+        }
+        val colon = rest.lastIndexOf(':')
+        if (colon <= 0) return null
+        val host = rest.substring(0, colon).lowercase()
+        val port = rest.substring(colon + 1).toIntOrNull() ?: return null
+        return host to port
+    }
 }
