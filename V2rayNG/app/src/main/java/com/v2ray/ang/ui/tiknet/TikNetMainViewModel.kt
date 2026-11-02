@@ -146,6 +146,8 @@ data class TikNetMainUiState(
 sealed class TikNetUiEvent {
     data object StartVpn : TikNetUiEvent()
     data object RestartVpn : TikNetUiEvent()
+    /** Account purged/revoked — clear local session and open login. */
+    data object ForceLogout : TikNetUiEvent()
     data class Toast(val message: String) : TikNetUiEvent()
 }
 
@@ -209,7 +211,13 @@ class TikNetMainViewModel(
                 TikNetBootstrap.refreshGeoAssets(getApplication())
             }
         }
-        viewModelScope.launch { loadUser(silent = true) }
+        viewModelScope.launch {
+            // Stretch old short-lived JWTs without bothering the user.
+            withContext(Dispatchers.IO) {
+                runCatching { TikNetApi.tryRefreshAndPersist(getApplication()) }
+            }
+            loadUser(silent = true)
+        }
         viewModelScope.launch { loadAnnouncement() }
         viewModelScope.launch { checkForAppUpdate() }
         viewModelScope.launch(Dispatchers.IO) { TikNetDevice.registerIfLoggedIn(getApplication()) }
@@ -771,12 +779,21 @@ class TikNetMainViewModel(
                 pingAllServers()
                 _ui.update { it.copy(busy = false, syncMessage = "$n کانفیگ وارد شد") }
             } catch (e: Exception) {
+                val api = e as? com.v2ray.ang.tiknet.TikNetApiException
+                if (api?.forcesLogout == true) {
+                    TikNetPrefs.clearSession(getApplication())
+                    _events.tryEmit(TikNetUiEvent.ForceLogout)
+                    _ui.update { it.copy(busy = false) }
+                    return@launch
+                }
                 _ui.update {
                     it.copy(busy = false, syncMessage = TikNetErrors.message(e, "همگام‌سازی ناموفق"))
                 }
             } finally {
                 // Always refresh account profile, even when subscription import fails.
-                loadUser(silent = true)
+                if (TikNetPrefs.isLoggedIn(getApplication())) {
+                    loadUser(silent = true)
+                }
             }
         }
     }
@@ -825,6 +842,14 @@ class TikNetMainViewModel(
                 loadUsageHistory()
             } catch (e: Exception) {
                 android.util.Log.e("TikNet", "loadUser failed: ${e.message}", e)
+                val api = e as? TikNetApiException
+                    ?: (e.cause as? TikNetApiException)
+                if (api?.forcesLogout == true) {
+                    TikNetPrefs.clearSession(getApplication())
+                    _events.tryEmit(TikNetUiEvent.ForceLogout)
+                    _ui.update { it.copy(busy = false, userLoading = false) }
+                    return@launch
+                }
                 val cached = TikNetPrefs.getCachedProfile(getApplication())
                 val uname = TikNetPrefs.getUsername(getApplication())
                 val fallback = cached

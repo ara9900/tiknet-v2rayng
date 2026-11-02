@@ -46,6 +46,9 @@ class AngApplication : Application() {
         // Ensure critical preference defaults are present in MMKV early
         SettingsManager.initApp(this)
 
+        // TikNet: allow API layer to refresh expired JWTs without forcing re-login
+        com.v2ray.ang.tiknet.TikNetApi.bindAppContext(this)
+
         // TikNet: default to dark theme (matches Flutter TikNet look)
         if (MmkvManager.decodeSettingsString(AppConfig.PREF_UI_MODE_NIGHT).isNullOrBlank()) {
             ThemeManager.setThemeMode("2")

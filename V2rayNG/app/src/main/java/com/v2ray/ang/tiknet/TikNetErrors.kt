@@ -11,9 +11,14 @@ object TikNetErrors {
         val chain = generateSequence(error) { it.cause }.toList()
         chain.firstOrNull { it is TikNetApiException }?.let { api ->
             val ex = api as TikNetApiException
-            return when (ex.statusCode) {
-                401 -> "نشست منقضی شده؛ دوباره وارد شوید"
-                403 -> "دسترسی مجاز نیست"
+            return when {
+                ex.forcesLogout && ex.code == "account_removed" ->
+                    ex.message?.takeIf { it.isNotBlank() } ?: "حساب حذف شده است؛ دوباره ثبت‌نام یا وارد شوید"
+                ex.forcesLogout ->
+                    ex.message?.takeIf { it.isNotBlank() } ?: "نشست لغو شده؛ دوباره وارد شوید"
+                ex.statusCode == 401 ->
+                    "اتصال به حساب برقرار نشد؛ چند لحظه دیگر تلاش کنید"
+                ex.statusCode == 403 -> "دسترسی مجاز نیست"
                 else -> ex.message?.takeIf { it.isNotBlank() } ?: fallback
             }
         }

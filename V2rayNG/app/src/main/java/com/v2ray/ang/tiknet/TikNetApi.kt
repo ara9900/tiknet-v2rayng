@@ -10,7 +10,18 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.util.concurrent.TimeUnit
 
-class TikNetApiException(message: String, val statusCode: Int? = null) : Exception(message)
+class TikNetApiException(
+    message: String,
+    val statusCode: Int? = null,
+    val code: String? = null,
+) : Exception(message) {
+    val forcesLogout: Boolean
+        get() = statusCode == 401 && code in FORCE_LOGOUT_CODES
+
+    companion object {
+        val FORCE_LOGOUT_CODES = setOf("account_removed", "session_revoked")
+    }
+}
 
 data class TikNetLoginResponse(
     @SerializedName("access_token") val accessToken: String = "",
@@ -172,42 +183,39 @@ object TikNetApi {
      * and nested brand.support_telegram.
      */
     fun enrichMe(baseUrl: String, token: String): Pair<TikNetUserInfo, String?> {
-        val req = Request.Builder()
-            .url("${root(baseUrl)}/api/customer/me")
-            .get()
-            .header("Authorization", "Bearer $token")
-            .header("Accept", "application/json")
-            .build()
-        client.newCall(req).execute().use { resp ->
-            val text = resp.body?.string().orEmpty()
-            if (!resp.isSuccessful) {
-                val detail = runCatching {
-                    JsonParser.parseString(text).asJsonObject.get("detail")?.asString
-                }.getOrNull()
-                throw TikNetApiException(detail ?: "HTTP ${resp.code}", resp.code)
+        return withAuthRetry(token) { activeToken ->
+            val req = Request.Builder()
+                .url("${root(baseUrl)}/api/customer/me")
+                .get()
+                .header("Authorization", "Bearer $activeToken")
+                .header("Accept", "application/json")
+                .build()
+            client.newCall(req).execute().use { resp ->
+                val text = resp.body?.string().orEmpty()
+                if (!resp.isSuccessful) throw parseApiError(text, resp.code)
+                if (text.isBlank()) throw TikNetApiException("Empty response")
+                val rootEl = runCatching { JsonParser.parseString(text).asJsonObject }.getOrNull()
+                    ?: throw TikNetApiException("Invalid JSON")
+                val me = parseUserInfo(rootEl)
+                fun jsonString(el: com.google.gson.JsonElement?): String? {
+                    if (el == null || el.isJsonNull || !el.isJsonPrimitive) return null
+                    return el.asString?.trim()?.takeIf { it.isNotEmpty() }
+                }
+                val brandTg = jsonString(rootEl.getAsJsonObject("brand")?.get("support_telegram"))
+                val topTg = jsonString(rootEl.get("support_telegram"))
+                val supportTg = brandTg ?: topTg ?: me.supportTelegram
+                val shopEl = rootEl.get("shop_enabled")
+                val shopEnabled = if (shopEl != null && !shopEl.isJsonNull && shopEl.isJsonPrimitive && shopEl.asJsonPrimitive.isBoolean) {
+                    shopEl.asBoolean
+                } else {
+                    me.shopEnabled
+                }
+                val enriched = me.copy(
+                    supportTelegram = supportTg,
+                    shopEnabled = shopEnabled,
+                )
+                enriched to supportTg
             }
-            if (text.isBlank()) throw TikNetApiException("Empty response")
-            val rootEl = runCatching { JsonParser.parseString(text).asJsonObject }.getOrNull()
-                ?: throw TikNetApiException("Invalid JSON")
-            val me = parseUserInfo(rootEl)
-            fun jsonString(el: com.google.gson.JsonElement?): String? {
-                if (el == null || el.isJsonNull || !el.isJsonPrimitive) return null
-                return el.asString?.trim()?.takeIf { it.isNotEmpty() }
-            }
-            val brandTg = jsonString(rootEl.getAsJsonObject("brand")?.get("support_telegram"))
-            val topTg = jsonString(rootEl.get("support_telegram"))
-            val supportTg = brandTg ?: topTg ?: me.supportTelegram
-            val shopEl = rootEl.get("shop_enabled")
-            val shopEnabled = if (shopEl != null && !shopEl.isJsonNull && shopEl.isJsonPrimitive && shopEl.asJsonPrimitive.isBoolean) {
-                shopEl.asBoolean
-            } else {
-                me.shopEnabled
-            }
-            val enriched = me.copy(
-                supportTelegram = supportTg,
-                shopEnabled = shopEnabled,
-            )
-            return enriched to supportTg
         }
     }
 
@@ -381,16 +389,34 @@ object TikNetApi {
     }
 
     fun getSubscriptionConfigBytes(baseUrl: String, token: String): ByteArray {
-        val req = Request.Builder()
-            .url("${root(baseUrl)}/api/customer/subscription/config")
-            .get()
-            .header("Authorization", "Bearer $token")
-            .build()
-        client.newCall(req).execute().use { resp ->
-            if (!resp.isSuccessful) {
-                throw TikNetApiException("subscription config HTTP ${resp.code}", resp.code)
+        return withAuthRetry(token) { activeToken ->
+            val req = Request.Builder()
+                .url("${root(baseUrl)}/api/customer/subscription/config")
+                .get()
+                .header("Authorization", "Bearer $activeToken")
+                .build()
+            client.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) {
+                    val text = resp.body?.string().orEmpty()
+                    throw parseApiError(text.ifBlank { "{\"detail\":\"subscription config HTTP ${resp.code}\"}" }, resp.code)
+                }
+                resp.body?.bytes() ?: ByteArray(0)
             }
-            return resp.body?.bytes() ?: ByteArray(0)
+        }
+    }
+
+    private fun <T> withAuthRetry(token: String, block: (String) -> T): T {
+        return try {
+            block(token)
+        } catch (e: TikNetApiException) {
+            if (e.statusCode == 401 && !e.forcesLogout) {
+                val ctx = _appContext
+                if (ctx != null) {
+                    val newTok = runCatching { tryRefreshAndPersist(ctx) }.getOrNull()
+                    if (!newTok.isNullOrBlank()) return block(newTok)
+                }
+            }
+            throw e
         }
     }
 
@@ -715,18 +741,81 @@ object TikNetApi {
         }
     }
 
-    private fun <T> executeJson(req: Request, clazz: Class<T>): T {
+    data class SessionRefreshResponse(
+        @SerializedName("access_token") val accessToken: String = "",
+        @SerializedName("expires_in") val expiresIn: Int = 0,
+        val code: String? = null,
+    )
+
+    /** Re-issue JWT for the same session (works even if the old token is expired). */
+    fun refreshSession(baseUrl: String, token: String): SessionRefreshResponse {
+        val req = Request.Builder()
+            .url("${root(baseUrl)}/api/customer/session/refresh")
+            .post("{}".toRequestBody(jsonMedia))
+            .header("Authorization", "Bearer $token")
+            .header("Accept", "application/json")
+            .build()
+        return executeJson(req, SessionRefreshResponse::class.java, allowRefreshRetry = false)
+    }
+
+    /**
+     * Try refresh once and persist the new token. Returns new token or null.
+     * Throws [TikNetApiException] with forcesLogout when the account is gone/revoked.
+     */
+    fun tryRefreshAndPersist(ctx: Context): String? {
+        val base = TikNetPrefs.getBaseUrl(ctx) ?: return null
+        val old = TikNetPrefs.getAccessToken(ctx) ?: return null
+        val refreshed = refreshSession(base, old)
+        val newTok = refreshed.accessToken.trim()
+        if (newTok.isEmpty()) return null
+        TikNetPrefs.saveSession(ctx, base, newTok, TikNetPrefs.getUsername(ctx))
+        return newTok
+    }
+
+    private fun parseApiError(text: String, statusCode: Int): TikNetApiException {
+        val obj = runCatching { JsonParser.parseString(text).asJsonObject }.getOrNull()
+        val detail = obj?.get("detail")?.takeIf { it.isJsonPrimitive }?.asString
+        val code = obj?.get("code")?.takeIf { it.isJsonPrimitive }?.asString
+        return TikNetApiException(detail ?: "HTTP $statusCode", statusCode, code)
+    }
+
+    private fun <T> executeJson(
+        req: Request,
+        clazz: Class<T>,
+        allowRefreshRetry: Boolean = true,
+    ): T {
         client.newCall(req).execute().use { resp ->
             val text = resp.body?.string().orEmpty()
             if (!resp.isSuccessful) {
-                val detail = runCatching {
-                    JsonParser.parseString(text).asJsonObject.get("detail")?.asString
-                }.getOrNull()
-                throw TikNetApiException(detail ?: "HTTP ${resp.code}", resp.code)
+                val err = parseApiError(text, resp.code)
+                // One silent refresh for expired/invalid customer JWTs (not account removed).
+                if (allowRefreshRetry && resp.code == 401 && !err.forcesLogout) {
+                    val auth = req.header("Authorization").orEmpty()
+                    if (auth.lowercase().startsWith("bearer ")) {
+                        val ctxHolder = _appContext
+                        if (ctxHolder != null) {
+                            val newTok = runCatching { tryRefreshAndPersist(ctxHolder) }.getOrElse { throw err }
+                            if (!newTok.isNullOrBlank()) {
+                                val retry = req.newBuilder()
+                                    .header("Authorization", "Bearer $newTok")
+                                    .build()
+                                return executeJson(retry, clazz, allowRefreshRetry = false)
+                            }
+                        }
+                    }
+                }
+                throw err
             }
             return gson.fromJson(text, clazz)
                 ?: throw TikNetApiException("Empty response")
         }
+    }
+
+    @Volatile
+    private var _appContext: Context? = null
+
+    fun bindAppContext(ctx: Context) {
+        _appContext = ctx.applicationContext
     }
 
     /** Resolve panel base URL like Flutter ConfigService. */

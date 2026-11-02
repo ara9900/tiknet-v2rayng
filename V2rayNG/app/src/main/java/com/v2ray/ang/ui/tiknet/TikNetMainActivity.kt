@@ -62,6 +62,13 @@ class TikNetMainActivity : HelperBaseComponentActivity() {
                 when (event) {
                     TikNetUiEvent.StartVpn -> startVpnOrService()
                     TikNetUiEvent.RestartVpn -> restartVpnAfterStop()
+                    TikNetUiEvent.ForceLogout -> {
+                        if (state.phase == TikNetConnPhase.Connected) {
+                            LauncherManager.stopService(this@TikNetMainActivity)
+                        }
+                        startActivity(Intent(this@TikNetMainActivity, TikNetLoginActivity::class.java))
+                        finish()
+                    }
                     is TikNetUiEvent.Toast -> {
                         // temporarily reuse syncMessage for toast text on account/connect
                         viewModel.ui.value.let {
