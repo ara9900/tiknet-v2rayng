@@ -57,6 +57,7 @@ import android.os.Build
 import com.v2ray.ang.BuildConfig
 import com.v2ray.ang.tiknet.TikNetDevice
 import com.v2ray.ang.tiknet.TikNetPrefs
+import com.v2ray.ang.tiknet.TikNetProduct
 import androidx.compose.material.icons.outlined.Campaign
 import androidx.compose.material.icons.outlined.CardGiftcard
 import androidx.compose.material.icons.outlined.ContentCopy
@@ -4169,7 +4170,8 @@ private fun statusLabel(state: TikNetMainUiState): String = when {
 
 private fun statusHint(state: TikNetMainUiState): String = when {
     state.smartPicking -> "پینگ همهٔ سرورها گرفته می‌شود و بهترین انتخاب می‌شود"
-    state.phase == TikNetConnPhase.Connected -> "ترافیک شما از طریق VPN عبور می‌کند"
+    state.phase == TikNetConnPhase.Connected ->
+        TikNetProduct.connectSubtitle(state.user?.productKind)
     state.phase == TikNetConnPhase.Connecting -> "لطفاً چند ثانیه صبر کنید"
     state.phase == TikNetConnPhase.Disconnecting -> "در حال قطع اتصال"
     else -> "برای اتصال، دکمه پایین را بزنید"

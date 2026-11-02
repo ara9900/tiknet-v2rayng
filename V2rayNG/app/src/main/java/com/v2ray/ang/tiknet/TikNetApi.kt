@@ -25,6 +25,8 @@ data class TikNetUserInfo(
     @SerializedName("has_subscription") val hasSubscription: Boolean = false,
     @SerializedName("subscription_url") val subscriptionUrl: String? = null,
     @SerializedName("plan_name") val planName: String? = null,
+    /** Panel: `vpn` (default) or `game_dns` — same APK, different configs/UI. */
+    @SerializedName("product_kind") val productKind: String? = null,
     @SerializedName("is_expired") val isExpired: Boolean? = null,
     @SerializedName("days_remaining") val daysRemaining: Int? = null,
     @SerializedName("traffic_used_bytes") val trafficUsedBytes: Long? = null,
@@ -247,6 +249,7 @@ object TikNetApi {
             hasSubscription = bool("has_subscription", "hasSubscription") ?: false,
             subscriptionUrl = str("subscription_url", "subscriptionUrl"),
             planName = str("plan_name", "planName"),
+            productKind = TikNetProduct.normalize(str("product_kind", "productKind")),
             isExpired = bool("is_expired", "isExpired"),
             daysRemaining = intOrNull("days_remaining", "daysRemaining"),
             trafficUsedBytes = longOrNull("traffic_used_bytes", "trafficUsedBytes"),

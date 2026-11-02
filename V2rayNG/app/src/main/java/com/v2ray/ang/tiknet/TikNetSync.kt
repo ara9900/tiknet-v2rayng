@@ -17,15 +17,17 @@ object TikNetSync {
     fun syncPersonalSubscription(ctx: Context): Int {
         val base = TikNetPrefs.getBaseUrl(ctx) ?: throw TikNetApiException("no base url")
         val token = TikNetPrefs.getAccessToken(ctx) ?: throw TikNetApiException("not logged in")
+        val kind = TikNetPrefs.getProductKind(ctx)
         val bytes = TikNetApi.getSubscriptionConfigBytes(base, token)
         if (bytes.isEmpty()) throw TikNetApiException("empty subscription")
 
-        ensureSubscriptionShell()
-        val payload = decodePayload(bytes)
+        ensureSubscriptionShell(kind)
+        val payload = TikNetProduct.filterSubscriptionPayload(decodePayload(bytes), kind)
+        if (payload.isBlank()) throw TikNetApiException(EMPTY_IMPORT_MESSAGE)
         val (count, _) = AngConfigManager.importBatchConfig(payload, TikNetPrefs.TIKNET_SUB_GUID, append = false)
         if (count == 0) throw TikNetApiException(EMPTY_IMPORT_MESSAGE)
         val sub = MmkvManager.decodeSubscription(TikNetPrefs.TIKNET_SUB_GUID) ?: SubscriptionItem()
-        sub.remarks = "TikNet"
+        sub.remarks = TikNetProduct.subscriptionRemarks(kind)
         sub.enabled = true
         sub.lastUpdated = System.currentTimeMillis()
         MmkvManager.encodeSubscription(TikNetPrefs.TIKNET_SUB_GUID, sub)
@@ -33,6 +35,9 @@ object TikNetSync {
     }
 
     fun importCatalogServer(ctx: Context, serverId: Int, name: String): Int {
+        if (TikNetPrefs.isGameDnsMode(ctx)) {
+            throw TikNetApiException("کاتالوگ سرور برای اکانت DNS گیم در دسترس نیست")
+        }
         val base = TikNetPrefs.getBaseUrl(ctx) ?: throw TikNetApiException("no base url")
         val token = TikNetPrefs.getAccessToken(ctx) ?: throw TikNetApiException("not logged in")
         val bytes = TikNetApi.getServerConfigBytes(base, token, serverId)
@@ -50,13 +55,17 @@ object TikNetSync {
         return count
     }
 
-    private fun ensureSubscriptionShell() {
+    private fun ensureSubscriptionShell(kind: String = TikNetProduct.KIND_VPN) {
+        val remarks = TikNetProduct.subscriptionRemarks(kind)
         val existing = MmkvManager.decodeSubscription(TikNetPrefs.TIKNET_SUB_GUID)
         if (existing == null) {
             MmkvManager.encodeSubscription(
                 TikNetPrefs.TIKNET_SUB_GUID,
-                SubscriptionItem(remarks = "TikNet", enabled = true),
+                SubscriptionItem(remarks = remarks, enabled = true),
             )
+        } else if (existing.remarks != remarks) {
+            existing.remarks = remarks
+            MmkvManager.encodeSubscription(TikNetPrefs.TIKNET_SUB_GUID, existing)
         }
     }
 

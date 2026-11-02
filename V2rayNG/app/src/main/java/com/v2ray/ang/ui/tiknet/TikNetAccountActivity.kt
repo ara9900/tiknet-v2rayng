@@ -13,6 +13,7 @@ import com.v2ray.ang.tiknet.TikNetApi
 import com.v2ray.ang.tiknet.TikNetCatalogServer
 import com.v2ray.ang.tiknet.TikNetErrors
 import com.v2ray.ang.tiknet.TikNetPrefs
+import com.v2ray.ang.tiknet.TikNetProduct
 import com.v2ray.ang.tiknet.TikNetSync
 import androidx.appcompat.app.AppCompatActivity
 import kotlinx.coroutines.Dispatchers
@@ -49,9 +50,15 @@ class TikNetAccountActivity : AppCompatActivity() {
                 val base = TikNetPrefs.getBaseUrl(this@TikNetAccountActivity)!!
                 val token = TikNetPrefs.getAccessToken(this@TikNetAccountActivity)!!
                 val me = withContext(Dispatchers.IO) { TikNetApi.getMe(base, token) }
+                TikNetPrefs.saveCachedProfile(this@TikNetAccountActivity, me)
+                val gameDns = TikNetProduct.isGameDns(me)
+                catalogBtn.visibility = if (gameDns) View.GONE else View.VISIBLE
                 info.text = buildString {
                     appendLine("کاربر: ${me.fullName ?: me.username}")
                     appendLine("پلن: ${me.planName ?: "—"}")
+                    appendLine(
+                        "نوع سرویس: " + if (gameDns) "DNS گیم / شتاب‌دهنده" else "اشتراک کامل",
+                    )
                     appendLine("انقضا: ${me.expireDate ?: "—"}")
                     appendLine("روز باقی‌مانده: ${me.daysRemaining ?: "—"}")
                     appendLine("پنل: $base")

@@ -14,6 +14,7 @@ object TikNetPrefs {
     const val KEY_PANEL_URLS_CACHE = "panel_urls_json"
     const val KEY_SUB_GUID = "tiknet_sub_guid"
     const val TIKNET_SUB_GUID = "tiknet-personal"
+    private const val KEY_PRODUCT_KIND = "product_kind"
     private const val KEY_DEVICE_ID = "device_id"
     private const val KEY_ENTITLEMENT_NOTIF_PREFIX = "entitlement_notif_"
     private const val KEY_PINNED_SERVERS = "pinned_server_guids"
@@ -55,9 +56,22 @@ object TikNetPrefs {
         prefs(ctx).edit()
             .remove(KEY_ACCESS_TOKEN)
             .remove(KEY_USERNAME)
+            .remove(KEY_PRODUCT_KIND)
+            .remove(KEY_CACHED_PROFILE)
             // keep base_url / panel cache for faster next login
             .apply()
     }
+
+    fun saveProductKind(ctx: Context, kind: String?) {
+        prefs(ctx).edit()
+            .putString(KEY_PRODUCT_KIND, TikNetProduct.normalize(kind))
+            .apply()
+    }
+
+    fun getProductKind(ctx: Context): String =
+        TikNetProduct.normalize(prefs(ctx).getString(KEY_PRODUCT_KIND, null))
+
+    fun isGameDnsMode(ctx: Context): Boolean = TikNetProduct.isGameDns(getProductKind(ctx))
 
     fun savePanelUrlsCache(ctx: Context, urls: List<String>) {
         if (urls.isEmpty()) return
@@ -80,12 +94,15 @@ object TikNetPrefs {
     private const val KEY_CACHED_PROFILE = "cached_profile_json"
 
     fun saveCachedProfile(ctx: Context, user: TikNetUserInfo) {
+        val kind = TikNetProduct.normalize(user.productKind)
+        saveProductKind(ctx, kind)
         val json = org.json.JSONObject()
             .put("username", user.username)
             .put("full_name", user.fullName)
             .put("expire_date", user.expireDate)
             .put("has_subscription", user.hasSubscription)
             .put("plan_name", user.planName)
+            .put("product_kind", kind)
             .put("is_expired", user.isExpired)
             .put("days_remaining", user.daysRemaining)
             .put("traffic_used_bytes", user.trafficUsedBytes)
@@ -104,6 +121,9 @@ object TikNetPrefs {
                 expireDate = o.optString("expire_date").takeIf { it.isNotBlank() },
                 hasSubscription = o.optBoolean("has_subscription"),
                 planName = o.optString("plan_name").takeIf { it.isNotBlank() },
+                productKind = TikNetProduct.normalize(
+                    o.optString("product_kind").takeIf { it.isNotBlank() } ?: getProductKind(ctx),
+                ),
                 isExpired = if (o.has("is_expired") && !o.isNull("is_expired")) o.optBoolean("is_expired") else null,
                 daysRemaining = if (o.has("days_remaining") && !o.isNull("days_remaining")) o.optInt("days_remaining") else null,
                 trafficUsedBytes = if (o.has("traffic_used_bytes") && !o.isNull("traffic_used_bytes")) o.optLong("traffic_used_bytes") else null,
