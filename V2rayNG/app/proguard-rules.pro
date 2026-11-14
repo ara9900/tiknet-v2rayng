@@ -19,3 +19,9 @@
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
+# sshj (SSH tunnel -> local SOCKS)
+-keep class net.schmizz.sshj.** { *; }
+-keep class com.hierynomus.** { *; }
+-dontwarn net.schmizz.sshj.**
+-dontwarn org.bouncycastle.**
+-dontwarn org.ietf.jgss.**

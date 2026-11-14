@@ -104,6 +104,10 @@ class RealPingWorkerService(
             if (tcpTime <= -1L) {
                 return retFailure
             }
+            // SSH needs a live local tunnel for Xray delay probe; TCP reachability is enough.
+            if (config.configType == EConfigType.SSH) {
+                return tcpTime
+            }
         }
 
         val configResult = CoreConfigManager.getV2rayConfig4Speedtest(context, guid)

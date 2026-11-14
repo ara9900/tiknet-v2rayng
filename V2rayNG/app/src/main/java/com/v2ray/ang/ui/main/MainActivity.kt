@@ -246,6 +246,7 @@ class MainActivity : HelperBaseComponentActivity() {
             EConfigType.TROJAN -> ServerTrojanActivity::class.java
             EConfigType.WIREGUARD -> ServerWireguardActivity::class.java
             EConfigType.HYSTERIA2 -> ServerHysteria2Activity::class.java
+            EConfigType.SSH -> ServerSshActivity::class.java
             else -> ServerHttpActivity::class.java
         }
         val intent = Intent(this, activityClass).apply {

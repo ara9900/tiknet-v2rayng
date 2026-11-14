@@ -10,6 +10,7 @@ import com.v2ray.ang.enums.NetworkType
 import com.v2ray.ang.extension.isNotNullEmpty
 import com.v2ray.ang.extension.nullIfBlank
 import com.v2ray.ang.handler.MmkvManager
+import com.v2ray.ang.service.SshTunnelManager
 import com.v2ray.ang.util.HttpUtil
 import com.v2ray.ang.util.JsonUtil
 import com.v2ray.ang.util.LogUtil
@@ -32,6 +33,7 @@ object CoreOutboundBuilder {
             EConfigType.WIREGUARD -> toOutboundWireguard(profileItem)
             EConfigType.HYSTERIA2 -> toOutboundHysteria2(profileItem)
             EConfigType.HTTP -> toOutboundHttp(profileItem)
+            EConfigType.SSH -> toOutboundSsh(profileItem)
             else -> null
         }
 
@@ -201,6 +203,23 @@ object CoreOutboundBuilder {
         }
 
         return outboundBean
+    }
+
+
+    private fun toOutboundSsh(profileItem: ProfileItem): OutboundBean? {
+        val port = SshTunnelManager.localSocksPort
+        if (port <= 0) {
+            LogUtil.e(AppConfig.TAG, "SSH tunnel not ready (local SOCKS port=0)")
+            return null
+        }
+        val socksProfile = profileItem.copy(
+            configType = EConfigType.SOCKS,
+            server = AppConfig.LOOPBACK,
+            serverPort = port.toString(),
+            username = null,
+            password = null,
+        )
+        return toOutboundSocks(socksProfile)
     }
 
     private fun toOutboundSocks(profileItem: ProfileItem): OutboundBean? {

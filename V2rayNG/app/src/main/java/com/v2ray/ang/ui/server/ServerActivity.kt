@@ -273,6 +273,7 @@ fun ServerScreen(
     val isVless = configType == EConfigType.VLESS
     val isShadowsocks = configType == EConfigType.SHADOWSOCKS
     val isSocksOrHttp = configType == EConfigType.SOCKS || configType == EConfigType.HTTP
+    val isSsh = configType == EConfigType.SSH
     val isTrojan = configType == EConfigType.TROJAN
     val isWireguard = configType == EConfigType.WIREGUARD
     val isHysteria2 = configType == EConfigType.HYSTERIA2
@@ -293,7 +294,7 @@ fun ServerScreen(
             else -> null
         },
         flow = if (isVless) flow else null,
-        username = if (isSocksOrHttp) username else null,
+        username = if (isSocksOrHttp || isSsh) username else null,
         secretKey = if (isWireguard) secretKey else null,
         publicKey = when {
             isWireguard -> publicKey

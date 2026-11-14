@@ -22,6 +22,20 @@ class TikNetProductTest {
     }
 
     @Test
+    fun stripsSshInGameMode() {
+        val payload = "ssh://u:p@1.2.3.4:2096#SSH\nwireguard://abc"
+        val out = TikNetProduct.filterSubscriptionPayload(payload, "game_dns")
+        assertFalse(out.contains("ssh://"))
+        assertTrue(out.contains("wireguard://"))
+    }
+
+    @Test
+    fun keepsSshInVpnMode() {
+        val line = "ssh://u:p@1.2.3.4:2096#SSH"
+        assertEquals(line, TikNetProduct.filterSubscriptionPayload(line, "vpn"))
+    }
+
+    @Test
     fun keepsWireGuardConf() {
         val conf = """
             [Interface]

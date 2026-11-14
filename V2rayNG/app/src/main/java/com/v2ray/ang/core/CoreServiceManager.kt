@@ -16,6 +16,8 @@ import com.v2ray.ang.contracts.IDialerService
 import com.v2ray.ang.contracts.ServiceControl
 import com.v2ray.ang.dto.OutboundTrafficStat
 import com.v2ray.ang.dto.entities.ProfileItem
+import com.v2ray.ang.enums.EConfigType
+import com.v2ray.ang.service.SshTunnelManager
 import com.v2ray.ang.enums.BrowserDialerMode
 import com.v2ray.ang.extension.isNotNullEmpty
 import com.v2ray.ang.handler.MmkvManager
@@ -97,6 +99,7 @@ object CoreServiceManager {
             doStartCoreLoop(service, vpnInterface)
             return true
         } catch (e: Exception) {
+            SshTunnelManager.stop()
             val message = e.message?.takeUnless { it.isBlank() } ?: e.javaClass.simpleName
             LogUtil.e(AppConfig.TAG, "StartCore-Manager: $message", e)
             MessageHelper.sendMsg2UI(service, AppConfig.MSG_STATE_START_FAILURE, message)
@@ -124,9 +127,20 @@ object CoreServiceManager {
         val config = MmkvManager.decodeServerConfig(guid) ?: error("Failed to decode server config")
 
         LogUtil.i(AppConfig.TAG, "StartCore-Manager: Starting core loop for ${config.remarks}")
-        val result = CoreConfigManager.getV2rayConfig(service, guid)
+        if (config.configType == EConfigType.SSH) {
+            SshTunnelManager.start(config)
+        } else {
+            SshTunnelManager.stop()
+        }
+        val result = try {
+            CoreConfigManager.getV2rayConfig(service, guid)
+        } catch (e: Exception) {
+            SshTunnelManager.stop()
+            throw e
+        }
         LogUtil.d(AppConfig.TAG, result.content)
         if (!result.status) {
+            SshTunnelManager.stop()
             error(result.errorMessage.ifBlank { "Failed to get V2Ray config" })
         }
 
@@ -149,6 +163,7 @@ object CoreServiceManager {
         coreController.startLoop(result.content, tunFd)
 
         if (!isRunning()) {
+            SshTunnelManager.stop()
             error("Core failed to start")
         }
 
@@ -185,6 +200,7 @@ object CoreServiceManager {
     fun stopCoreLoop(): Boolean {
         val service = getService() ?: return false
 
+        SshTunnelManager.stop()
         networkMonitor?.unregister()
         networkMonitor = null
         currentVpnInterface = null

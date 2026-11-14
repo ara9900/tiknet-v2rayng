@@ -36,7 +36,7 @@ object TikNetProduct {
 
     private val PROXY_SCHEMES = listOf(
         "vless://", "vmess://", "ss://", "trojan://", "hy2://", "hysteria2://",
-        "tuic://", "hysteria://", "socks://", "http://", "https://",
+        "tuic://", "hysteria://", "socks://", "http://", "https://", "ssh://",
     )
 
     /**
