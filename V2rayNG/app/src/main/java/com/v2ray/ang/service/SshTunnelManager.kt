@@ -7,6 +7,7 @@ import com.v2ray.ang.util.VpnSocketProtector
 import net.schmizz.sshj.SSHClient
 import net.schmizz.sshj.connection.channel.direct.DirectConnection
 import net.schmizz.sshj.transport.verification.PromiscuousVerifier
+import org.bouncycastle.jce.provider.BouncyCastleProvider
 import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
@@ -15,6 +16,7 @@ import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.net.Socket
 import java.net.SocketAddress
+import java.security.Security
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
@@ -34,10 +36,35 @@ object SshTunnelManager {
     private var acceptThread: Thread? = null
     private var relayPool: ExecutorService? = null
     private val running = AtomicBoolean(false)
+    private val bcReady = AtomicBoolean(false)
+
+    /**
+     * Android ships a stub "BC" provider without X25519; sshj needs the full
+     * BouncyCastle jar or Curve25519 key exchange fails at connect.
+     */
+    private fun ensureBouncyCastle() {
+        if (bcReady.get()) return
+        synchronized(this) {
+            if (bcReady.get()) return
+            try {
+                Security.removeProvider(BouncyCastleProvider.PROVIDER_NAME)
+            } catch (_: Exception) {
+            }
+            try {
+                Security.insertProviderAt(BouncyCastleProvider(), 1)
+                bcReady.set(true)
+                LogUtil.i(AppConfig.TAG, "SSH: BouncyCastle provider registered")
+            } catch (e: Exception) {
+                LogUtil.e(AppConfig.TAG, "SSH: failed to register BouncyCastle", e)
+                throw IOException("SSH crypto setup failed: ${e.message}", e)
+            }
+        }
+    }
 
     @Synchronized
     fun start(profile: ProfileItem) {
         stop()
+        ensureBouncyCastle()
 
         val host = profile.server?.trim().orEmpty()
         if (host.isEmpty()) error("SSH host missing")

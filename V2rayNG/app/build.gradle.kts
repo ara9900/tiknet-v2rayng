@@ -13,8 +13,8 @@ android {
         applicationId = "com.tik.net"
         minSdk = 24
         targetSdk = 37
-        versionCode = 40333
-        versionName = "4.3.33"
+        versionCode = 40334
+        versionName = "4.3.34"
 
         val abiFilterList = (properties["ABI_FILTERS"] as? String)?.split(';')
         splits {
@@ -177,6 +177,7 @@ dependencies {
     implementation(libs.okhttp)
     implementation(libs.sshj)
     implementation(libs.slf4j.nop)
+    implementation(libs.bcprov.jdk18on)
 
     // Reactive and Utility Libraries
     implementation(libs.kotlinx.coroutines.android)

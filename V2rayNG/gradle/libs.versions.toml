@@ -23,6 +23,7 @@ reorderable = "3.1.0"
 coil = "2.7.0"
 sshj = "0.38.0"
 slf4jNop = "2.0.16"
+bcprov = "1.79"
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
 desugar-jdk-libs = { module = "com.android.tools:desugar_jdk_libs", version.ref = "desugarJdkLibs" }
@@ -62,6 +63,7 @@ lifecycle-runtime-compose = { module = "androidx.lifecycle:lifecycle-runtime-com
 coil-compose = { module = "io.coil-kt:coil-compose", version.ref = "coil" }
 sshj = { module = "com.hierynomus:sshj", version.ref = "sshj" }
 slf4j-nop = { module = "org.slf4j:slf4j-nop", version.ref = "slf4jNop" }
+bcprov-jdk18on = { module = "org.bouncycastle:bcprov-jdk18on", version.ref = "bcprov" }
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
 android-library = { id = "com.android.library", version.ref = "agp" }

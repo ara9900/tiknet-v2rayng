@@ -22,6 +22,7 @@
 # sshj (SSH tunnel -> local SOCKS)
 -keep class net.schmizz.sshj.** { *; }
 -keep class com.hierynomus.** { *; }
+-keep class org.bouncycastle.** { *; }
 -dontwarn net.schmizz.sshj.**
 -dontwarn org.bouncycastle.**
 -dontwarn org.ietf.jgss.**
